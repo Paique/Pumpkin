@@ -6,6 +6,8 @@ members = [
     "crates/carrot-chat",
     "crates/carrot-essentials",
     "crates/carrot-multiverse",
+    "crates/carrot-terrain",
+    "crates/carrot-worldedit",
     "crates/pumpkin",
     "crates/pumpkin-core",
     "crates/pumpkin-api-macros",
@@ -182,6 +184,7 @@ bytes = { version = "1.12", default-features = false, features = ["serde", "std"
 # Concurrency/Parallelism and Synchronization
 futures = { version = "0.3", default-features = false, features = ["std"] }
 rayon = { version = "1.12", default-features = false }
+png = "0.17"
 crossbeam = { version = "0.8", default-features = false, features = ["std"] }
 
 uuid = { version = "1.29", default-features = false, features = ["serde", "v3", "v4", "std"] }

@@ -11,6 +11,8 @@ carrot-core = { path = "../carrot-core" }
 carrot-chat = { path = "../carrot-chat" }
 carrot-essentials = { path = "../carrot-essentials" }
 carrot-multiverse = { path = "../carrot-multiverse" }
+carrot-terrain = { path = "../carrot-terrain" }
+carrot-worldedit = { path = "../carrot-worldedit" }
 pumpkin-core.workspace = true
 pumpkin-util.workspace = true
 

@@ -26,5 +26,11 @@ pub fn init(server: Arc<Server>, exec_dir: &Path) {
     carrot.register_module(Arc::new(carrot_essentials::Essentials::new()));
     carrot.register_module(Arc::new(carrot_multiverse::Multiverse::new()));
     carrot.register_module(Arc::new(carrot_chat::Chat::new()));
+    let worldedit = Arc::new(carrot_worldedit::WorldEdit::new());
+    let we_state = Arc::clone(worldedit.state());
+    carrot.register_module(worldedit);
+    // Terrain rides the worldedit engine (masks, edit, history), so it
+    // must register after it and share its state.
+    carrot.register_module(Arc::new(carrot_terrain::Terrain::new(we_state)));
     carrot.init();
 }
