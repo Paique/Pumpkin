@@ -1,0 +1,25 @@
+[package]
+name = "carrot-worldedit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Carrot world edit module: cuboid selection, patterns, clipboard, Sponge schematics and on-disk history."
+
+[dependencies]
+carrot-core = { path = "../carrot-core" }
+pumpkin-core.workspace = true
+pumpkin-data.workspace = true
+pumpkin-inventory.workspace = true
+pumpkin-nbt.workspace = true
+pumpkin-util.workspace = true
+pumpkin-world.workspace = true
+rayon.workspace = true
+serde.workspace = true
+toml.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
