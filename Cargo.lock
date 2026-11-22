@@ -438,6 +438,7 @@ name = "carrot"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "carrot-core",
+ "carrot-essentials",
  "pumpkin-core",
  "pumpkin-util",
 ]
@@ -452,6 +453,19 @@ dependencies = [
  "thiserror 2.0.21",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "carrot-essentials"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "carrot-core",
+ "pumpkin-core",
+ "pumpkin-util",
+ "serde",
+ "toml",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

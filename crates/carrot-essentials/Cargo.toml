@@ -1,0 +1,19 @@
+[package]
+name = "carrot-essentials"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Carrot essentials module: fly, speed, tpa, homes, warps, back and spawn."
+
+[dependencies]
+carrot-core = { path = "../carrot-core" }
+pumpkin-core.workspace = true
+pumpkin-util.workspace = true
+serde.workspace = true
+toml.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

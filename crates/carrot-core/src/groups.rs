@@ -54,7 +54,12 @@ impl GroupsConfig {
             "builder".to_string(),
             GroupDef {
                 inherits: vec!["default".to_string()],
-                permissions: vec!["carrot:buildermode".to_string()],
+                permissions: vec![
+                    "carrot:buildermode".to_string(),
+                    "carrot:essentials.gamemode".to_string(),
+                    "carrot:essentials.setwarp".to_string(),
+                    "carrot:essentials.delwarp".to_string(),
+                ],
                 players: vec![
                     "sh4wsz".to_string(),
                     "oJotaaa".to_string(),

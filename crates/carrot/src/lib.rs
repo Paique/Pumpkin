@@ -23,5 +23,6 @@ pub fn init(server: Arc<Server>, exec_dir: &Path) {
     let carrot = Arc::new(Carrot::new(server, exec_dir));
     carrot_core::set_global(Arc::clone(&carrot));
     carrot.register_module(Arc::new(BuilderMode));
+    carrot.register_module(Arc::new(carrot_essentials::Essentials::new()));
     carrot.init();
 }

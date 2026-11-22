@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/carrot",
     "crates/carrot-core",
+    "crates/carrot-essentials",
     "crates/pumpkin",
     "crates/pumpkin-core",
     "crates/pumpkin-api-macros",
