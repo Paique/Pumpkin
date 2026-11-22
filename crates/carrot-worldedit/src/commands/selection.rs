@@ -4,7 +4,9 @@
 use std::sync::Arc;
 
 use carrot_core::ModuleContext;
-use pumpkin_core::command::argument_builder::{ArgumentBuilder, argument, command};
+use pumpkin_core::command::argument_builder::{
+    ArgumentBuilder, argument, command, literal,
+};
 use pumpkin_core::command::argument_types::coordinates::block_pos::BlockPosArgumentType;
 use pumpkin_core::command::argument_types::core::integer::IntegerArgumentType;
 use pumpkin_core::command::argument_types::core::string::StringArgumentType;
@@ -121,12 +123,21 @@ fn register_resize(
         state: Arc::clone(state),
         mode,
     };
+    let vertical = VerticalResizeExecutor {
+        state: Arc::clone(state),
+        mode,
+    };
     let node = command(name.to_string(), "Grows or shrinks the selection.")
         .executes(executor.clone())
         .then(
             argument("amount", IntegerArgumentType::any())
                 .executes(executor.clone())
                 .then(argument("direction", StringArgumentType::SingleWord).executes(executor)),
+        )
+        .then(
+            literal("vert")
+                .executes(vertical.clone())
+                .then(argument("amount", IntegerArgumentType::any()).executes(vertical)),
         );
     context.register_command(name, node, PERM_RESIZE);
 }
@@ -248,7 +259,8 @@ enum ResizeMode {
 }
 
 /// `//expand <amount> [direction]` / `//contract <amount> [direction]`,
-/// defaulting amount to 1 and direction to where the player looks.
+/// defaulting amount to 1 and direction to where the player looks. The
+/// `vert` keyword (`//expand 10 vert`) resizes up and down at once.
 #[derive(Clone)]
 struct ResizeExecutor {
     state: Arc<WeState>,
@@ -263,15 +275,15 @@ impl CommandExecutor for ResizeExecutor {
         };
         let amount = IntegerArgumentType::get(context, "amount").unwrap_or(1);
         let direction = match StringArgumentType::get(context, "direction") {
-            Ok(keyword) => {
-                if let Some(direction) = Direction::parse(keyword) {
-                    direction
-                } else {
+            Ok(keyword) => match Direction::parse(keyword) {
+                Some(direction) => Some(direction),
+                None if keyword.eq_ignore_ascii_case("vert") => None,
+                None => {
                     reply(context, format!("Direção desconhecida: {keyword}"));
                     return Ok(0);
                 }
-            }
-            Err(_) => look_direction(&player),
+            },
+            Err(_) => Some(look_direction(&player)),
         };
 
         let session = self.state.session(player.gameprofile.id);
@@ -284,10 +296,15 @@ impl CommandExecutor for ResizeExecutor {
             return Ok(0);
         };
         let region = Cuboid::new(selection[0], selection[1]);
-        let resized = match self.mode {
+        let step = |region: Cuboid, direction: Direction| match self.mode {
             ResizeMode::Expand => region.expand(direction, amount),
             ResizeMode::Contract => region.contract(direction, amount),
         };
+        let resized = direction.map_or_else(
+            // `vert`: grow (or shrink) up and down at the same time.
+            || step(step(region, Direction::Up), Direction::Down),
+            |direction| step(region, direction),
+        );
         if let Err(message) = check_volume(&self.state, &resized) {
             drop(guard);
             reply(context, message);
@@ -329,6 +346,57 @@ impl CommandExecutor for ShiftExecutor {
         guard.selection = Some([region.min(), region.max()]);
         drop(guard);
         reply(context, "Seleção movida.".to_string());
+        Ok(1)
+    }
+}
+
+/// `//expand vert` / `//expand vert <amount>`: without an amount the
+/// selection stretches to the full build height (like `//vert`); with one
+/// it grows that many blocks up *and* down, matching `WorldEdit`.
+#[derive(Clone)]
+struct VerticalResizeExecutor {
+    state: Arc<WeState>,
+    mode: ResizeMode,
+}
+
+impl CommandExecutor for VerticalResizeExecutor {
+    fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let Some(player) = player_of(context) else {
+            reply(context, ONLY_PLAYERS);
+            return Ok(0);
+        };
+        let amount = IntegerArgumentType::get(context, "amount").unwrap_or(0);
+        let region = match selection_of(&self.state, player.gameprofile.id) {
+            Ok(region) => region,
+            Err(message) => {
+                reply(context, message);
+                return Ok(0);
+            }
+        };
+
+        let resized = if amount == 0 {
+            let world = player.world();
+            region.expand_vertical(world.get_bottom_y(), world.get_top_y())
+        } else {
+            let step = |region: Cuboid, direction: Direction| match self.mode {
+                ResizeMode::Expand => region.expand(direction, amount),
+                ResizeMode::Contract => region.contract(direction, amount),
+            };
+            step(step(region, Direction::Up), Direction::Down)
+        };
+        if let Err(message) = check_volume(&self.state, &resized) {
+            reply(context, message);
+            return Ok(0);
+        }
+
+        let session = self.state.session(player.gameprofile.id);
+        let mut guard = session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.selection = Some([resized.min(), resized.max()]);
+        drop(guard);
+        let volume = resized.volume().unwrap_or_default();
+        reply(context, format!("Seleção ajustada: {volume} blocos."));
         Ok(1)
     }
 }

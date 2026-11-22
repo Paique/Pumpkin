@@ -8,6 +8,7 @@ description = "Carrot world edit module: cuboid selection, patterns, clipboard, 
 
 [dependencies]
 carrot-core = { path = "../carrot-core" }
+flate2.workspace = true
 pumpkin-core.workspace = true
 pumpkin-data.workspace = true
 pumpkin-inventory.workspace = true
@@ -20,6 +21,11 @@ toml.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+pumpkin-config.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

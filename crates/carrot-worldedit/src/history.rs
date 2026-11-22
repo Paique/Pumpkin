@@ -3,12 +3,16 @@
 //! history) without keeping whole regions in memory.
 
 use std::collections::{HashMap, VecDeque};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
+use flate2::read::GzDecoder;
 use pumpkin_data::BlockStateId;
+use pumpkin_nbt::Nbt;
 use pumpkin_nbt::NbtCompound;
-use pumpkin_nbt::nbt_compress::{read_gzip_compound_tag, write_gzip_compound_tag_to_bytes};
+use pumpkin_nbt::array_limit;
+use pumpkin_nbt::deserializer::NbtReadHelperJava;
+use pumpkin_nbt::nbt_compress::write_gzip_compound_tag_to_bytes;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use uuid::Uuid;
@@ -194,41 +198,53 @@ fn palette_index(palette: &mut Vec<String>, lookup: &mut HashMap<String, i32>, n
 }
 
 fn deserialize(bytes: &[u8]) -> Option<Vec<Change>> {
-    let mut cursor = Cursor::new(bytes);
-    let root = read_gzip_compound_tag(&mut cursor).ok()?;
-    let palette: Vec<BlockStateId> = root
-        .get_list("palette")?
-        .iter()
-        .filter_map(|tag| match tag {
-            NbtTag::String(name) => parse_state_str(name).ok(),
-            _ => None,
-        })
-        .collect();
-    let xs = root.get_int_array("x")?;
-    let ys = root.get_int_array("y")?;
-    let zs = root.get_int_array("z")?;
-    let from = root.get_int_array("f")?;
-    let to = root.get_int_array("t")?;
+    // Decodes without `read_gzip_compound_tag`: its 64 MiB take() would
+    // truncate a large edit's own history file (a 5M-block confirm edit
+    // legitimately decompresses past that), and inside `unbounded` because
+    // the coordinate arrays exceed `MAX_ARRAY_LENGTH`. These bytes were
+    // written by this module, so no untrusted input reaches either path.
+    let mut buf = Vec::new();
+    GzDecoder::new(Cursor::new(bytes))
+        .read_to_end(&mut buf)
+        .ok()?;
+    array_limit::unbounded(|| {
+        let mut reader = NbtReadHelperJava::new(Cursor::new(buf));
+        let root = Nbt::read(&mut reader).ok()?.root_tag;
 
-    let mut changes = Vec::with_capacity(xs.len());
-    for index in 0..xs.len() {
-        let Some(before) = palette.get(from.get(index).copied()? as usize).copied() else {
-            continue;
-        };
-        let Some(after) = palette.get(to.get(index).copied()? as usize).copied() else {
-            continue;
-        };
-        changes.push((
-            BlockPos(Vector3::new(
-                *xs.get(index)?,
-                *ys.get(index)?,
-                *zs.get(index)?,
-            )),
-            before,
-            after,
-        ));
-    }
-    Some(changes)
+        let palette: Vec<BlockStateId> = root
+            .get_list("palette")?
+            .iter()
+            .filter_map(|tag| match tag {
+                NbtTag::String(name) => parse_state_str(name).ok(),
+                _ => None,
+            })
+            .collect();
+        let xs = root.get_int_array("x")?;
+        let ys = root.get_int_array("y")?;
+        let zs = root.get_int_array("z")?;
+        let from = root.get_int_array("f")?;
+        let to = root.get_int_array("t")?;
+
+        let mut changes = Vec::with_capacity(xs.len());
+        for index in 0..xs.len() {
+            let Some(before) = palette.get(from.get(index).copied()? as usize).copied() else {
+                continue;
+            };
+            let Some(after) = palette.get(to.get(index).copied()? as usize).copied() else {
+                continue;
+            };
+            changes.push((
+                BlockPos(Vector3::new(
+                    *xs.get(index)?,
+                    *ys.get(index)?,
+                    *zs.get(index)?,
+                )),
+                before,
+                after,
+            ));
+        }
+        Some(changes)
+    })
 }
 
 #[cfg(test)]
@@ -292,5 +308,56 @@ mod tests {
         store.record(&sample_changes()).expect("records again");
         assert_eq!(store.redo_depth(), 0);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reads_flat_v1_files() {
+        let original = sample_changes();
+        let mut root = NbtCompound::new();
+        root.put_int("v", 1);
+        root.put_list(
+            "palette",
+            vec![
+                NbtTag::String("minecraft:air".into()),
+                NbtTag::String("minecraft:stone".into()),
+                NbtTag::String("minecraft:dirt".into()),
+            ],
+        );
+        root.put("x", NbtTag::IntArray(vec![1, 4]));
+        root.put("y", NbtTag::IntArray(vec![2, 5]));
+        root.put("z", NbtTag::IntArray(vec![3, 6]));
+        root.put("f", NbtTag::IntArray(vec![0, 2]));
+        root.put("t", NbtTag::IntArray(vec![1, 1]));
+        let bytes = write_gzip_compound_tag_to_bytes(root).expect("payload serializes");
+
+        let loaded = deserialize(&bytes).expect("file loads");
+        assert_eq!(loaded.len(), original.len());
+        assert_eq!(loaded[0], original[0]);
+        assert_eq!(loaded[1], original[1]);
+    }
+
+    #[test]
+    fn round_trips_past_the_array_guard() {
+        // 513k entries exceed pumpkin-nbt's MAX_ARRAY_LENGTH (512_000);
+        // before the unbounded decode this loaded as nothing and undo
+        // answered "Desfeitas 0 edição(ões)".
+        let before = parse_state_str("stone").expect("valid state");
+        let after = parse_state_str("dirt").expect("valid state");
+        let changes: Vec<Change> = (0..513_000)
+            .map(|i| {
+                (
+                    BlockPos(Vector3::new(i % 1000, i / 1000, -(i as i32))),
+                    before,
+                    after,
+                )
+            })
+            .collect();
+
+        let bytes = serialize(&changes).expect("serializes");
+        let loaded = deserialize(&bytes).expect("deserializes past the guard");
+        assert_eq!(loaded.len(), changes.len());
+        assert_eq!(loaded[0], changes[0]);
+        assert_eq!(loaded[512_000], changes[512_000]);
+        assert_eq!(loaded[changes.len() - 1], changes[changes.len() - 1]);
     }
 }

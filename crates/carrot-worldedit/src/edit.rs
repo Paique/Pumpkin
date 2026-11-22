@@ -11,6 +11,7 @@ use pumpkin_data::BlockStateId;
 use pumpkin_nbt::NbtCompound;
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
 use pumpkin_util::text::TextComponent;
+use pumpkin_world::level::Level;
 use pumpkin_world::world::BlockFlags;
 use rayon::prelude::*;
 
@@ -28,6 +29,49 @@ const APPLY_FLAGS: BlockFlags = BlockFlags::from_bits_truncate(
 
 /// How many blocks to place between block-update flushes and yields.
 const FLUSH_INTERVAL: usize = 4096;
+
+/// How many block reads to take between yields while diffing a region.
+const READ_INTERVAL: usize = 65_536;
+
+/// Holds every chunk touching an edit loaded for the edit's duration.
+///
+/// Without the lease the periodic chunk unload (`clean_memory`) can drop
+/// chunks nobody watches mid-edit; `set_block_state` then silently
+/// writes nothing and `get_block_state_id` reads air, losing most of a
+/// huge edit. Force tickets keep the chunks alive exactly like FAWE's
+/// edit chunk retention, and `Drop` releases them even on panic.
+pub struct ChunkLease {
+    level: Arc<Level>,
+    chunks: Vec<Vector2<i32>>,
+}
+
+impl ChunkLease {
+    /// Acquires the lease for every chunk touching `items`.
+    pub fn acquire<T>(level: &Arc<Level>, items: &[T], key: impl Fn(&T) -> &BlockPos) -> Self {
+        let chunks = chunk_keys(items, key);
+        level.retain_chunks(&chunks);
+        Self {
+            level: Arc::clone(level),
+            chunks,
+        }
+    }
+}
+
+impl Drop for ChunkLease {
+    fn drop(&mut self) {
+        self.level.release_chunks(&self.chunks);
+    }
+}
+
+/// The distinct chunk coordinates touching `items`.
+fn chunk_keys<T>(items: &[T], key: impl Fn(&T) -> &BlockPos) -> Vec<Vector2<i32>> {
+    let mut chunks: HashSet<Vector2<i32>> = HashSet::new();
+    for item in items {
+        let pos = key(item);
+        chunks.insert(Vector2::new(pos.0.x >> 4, pos.0.z >> 4));
+    }
+    chunks.into_iter().collect()
+}
 
 /// A computed edit request: the desired state for each position (patterns
 /// already applied) plus per-command masks and block entity payloads.
@@ -72,6 +116,7 @@ pub async fn execute(state: &Arc<WeState>, player: &Arc<Player>, request: EditRe
         guard.gmask.clone()
     };
 
+    let _lease = ChunkLease::acquire(&world.level, &request.desired, |item| &item.0);
     ensure_chunks(
         &world,
         &request.desired,
@@ -99,6 +144,9 @@ pub async fn execute(state: &Arc<WeState>, player: &Arc<Player>, request: EditRe
             continue;
         }
         changes.push((*pos, before, *after));
+        if changes.len().is_multiple_of(READ_INTERVAL) {
+            tokio::task::yield_now().await;
+        }
     }
 
     let confirm_above = state.with_config(|config| config.confirm_above);
@@ -173,13 +221,17 @@ pub async fn apply_and_record(
     apply_changes(world, &changes, &block_entities).await;
 
     let session = state.session(player.gameprofile.id);
-    {
+    let record_failure = {
         let mut guard = session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Err(err) = guard.history.record(&changes) {
-            tracing::warn!("carrot worldedit: falha ao salvar history ({err})");
-        }
+        guard.history.record(&changes).err()
+    };
+    if let Some(err) = record_failure {
+        tracing::warn!("carrot worldedit: falha ao salvar history ({err})");
+        player.send_system_message(&TextComponent::text(format!(
+            "Aviso: falha ao salvar o history ({err}); //undo não terá esta edição."
+        )));
     }
     player.send_system_message(&TextComponent::text(format!(
         "{description}: {total} bloco(s) alterado(s)."
@@ -198,6 +250,7 @@ pub async fn replay_entries(world: &Arc<World>, entries: &[Change], use_before: 
 
 /// Applies `(position, state)` pairs verbatim (no history, no masks).
 pub async fn apply_state_list(world: &Arc<World>, targets: &[(BlockPos, BlockStateId)]) {
+    let _lease = ChunkLease::acquire(&world.level, targets, |item| &item.0);
     ensure_chunks(world, targets, |item: &(BlockPos, BlockStateId)| &item.0).await;
     for (index, (pos, state)) in targets.iter().enumerate() {
         if !world.is_in_build_limit(*pos) {
@@ -233,6 +286,7 @@ async fn apply_changes(
     changes: &[Change],
     block_entities: &HashMap<BlockPos, NbtCompound>,
 ) {
+    let _lease = ChunkLease::acquire(&world.level, changes, |item: &Change| &item.0);
     ensure_chunks(world, changes, |item: &Change| &item.0).await;
     for (index, (pos, _, after)) in changes.iter().enumerate() {
         world.set_block_state(pos, *after, APPLY_FLAGS);
@@ -257,11 +311,7 @@ async fn apply_changes(
 /// keeps serving other tasks. Public so read-based brushes (terrain
 /// module) can load before sampling.
 pub async fn ensure_chunks<T>(world: &Arc<World>, items: &[T], key: impl Fn(&T) -> &BlockPos) {
-    let mut chunks: HashSet<Vector2<i32>> = HashSet::new();
-    for item in items {
-        let pos = key(item);
-        chunks.insert(Vector2::new(pos.0.x >> 4, pos.0.z >> 4));
-    }
+    let chunks = chunk_keys(items, key);
 
     let mut fetched: usize = 0;
     for chunk in chunks {

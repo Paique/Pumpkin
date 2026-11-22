@@ -685,6 +685,41 @@ impl Level {
         f(&chunk)
     }
 
+    /// Holds chunks in memory with force tickets so a long-running bulk
+    /// edit cannot race the periodic unload (tickets outlive the fetch in
+    /// [`Level::get_or_fetch_chunk`], which drops its own ticket once the
+    /// chunk arrives).
+    pub fn retain_chunks(self: &Arc<Self>, chunks: &[Vector2<i32>]) {
+        if chunks.is_empty() {
+            return;
+        }
+        let mut lock = self
+            .chunk_loading
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for chunk in chunks {
+            lock.add_force_ticket(*chunk);
+        }
+        lock.send_change();
+    }
+
+    /// Releases chunks held by [`Level::retain_chunks`]. Safe to call for
+    /// chunks that were never retained; the ticket and priority lists
+    /// simply have no matching entry to remove.
+    pub fn release_chunks(&self, chunks: &[Vector2<i32>]) {
+        if chunks.is_empty() {
+            return;
+        }
+        let mut lock = self
+            .chunk_loading
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for chunk in chunks {
+            lock.remove_force_ticket(*chunk);
+        }
+        lock.send_change();
+    }
+
     /// Returns whether the chunk at `pos` is currently loaded in memory or exists on disk.
     pub async fn is_chunk_generated(&self, pos: Vector2<i32>) -> bool {
         if self.is_chunk_loaded(&pos) {
