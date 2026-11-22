@@ -8,7 +8,9 @@ description = "Carrot server feature modules (aggregator)."
 
 [dependencies]
 carrot-core = { path = "../carrot-core" }
+carrot-chat = { path = "../carrot-chat" }
 carrot-essentials = { path = "../carrot-essentials" }
+carrot-multiverse = { path = "../carrot-multiverse" }
 pumpkin-core.workspace = true
 pumpkin-util.workspace = true
 

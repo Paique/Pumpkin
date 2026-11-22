@@ -115,8 +115,23 @@ impl EssentialsState {
             .unwrap_or_else(PoisonError::into_inner) = data_folder.to_path_buf();
         *self.homes.write().unwrap_or_else(PoisonError::into_inner) =
             storage::load_or_empty(&data_folder.join("homes.toml"));
-        *self.warps.write().unwrap_or_else(PoisonError::into_inner) =
-            storage::load_or_empty(&data_folder.join("warps.toml"));
+
+        // Warps seed once: a missing file gets the reference server's set
+        // materialized for editing; an existing file (even emptied) wins.
+        let warps_path = data_folder.join("warps.toml");
+        let warps = if warps_path.exists() {
+            storage::load_or_empty(&warps_path)
+        } else {
+            let seeded = storage::WarpsFile::seed();
+            if let Err(err) = storage::save(&seeded, &warps_path) {
+                tracing::warn!(
+                    "carrot-essentials: failed to rewrite {}: {err}",
+                    warps_path.display()
+                );
+            }
+            seeded
+        };
+        *self.warps.write().unwrap_or_else(PoisonError::into_inner) = warps;
         self.clear_transient();
     }
 

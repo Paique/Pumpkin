@@ -1,0 +1,21 @@
+[package]
+name = "carrot-multiverse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Carrot multiverse module: declared worlds, void/flat generators and build flags."
+
+[dependencies]
+carrot-core = { path = "../carrot-core" }
+pumpkin-core.workspace = true
+pumpkin-data.workspace = true
+pumpkin-util.workspace = true
+pumpkin-world.workspace = true
+serde.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+toml.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

@@ -437,10 +437,26 @@ dependencies = [
 name = "carrot"
 version = "0.2.2+26.3-26.63"
 dependencies = [
+ "carrot-chat",
  "carrot-core",
  "carrot-essentials",
+ "carrot-multiverse",
  "pumpkin-core",
  "pumpkin-util",
+]
+
+[[package]]
+name = "carrot-chat"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "carrot-core",
+ "pumpkin-core",
+ "pumpkin-data",
+ "pumpkin-util",
+ "serde",
+ "toml",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -466,6 +482,21 @@ dependencies = [
  "toml",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "carrot-multiverse"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "carrot-core",
+ "pumpkin-core",
+ "pumpkin-data",
+ "pumpkin-util",
+ "pumpkin-world",
+ "serde",
+ "tokio",
+ "toml",
+ "tracing",
 ]
 
 [[package]]

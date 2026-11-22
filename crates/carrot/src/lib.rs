@@ -24,5 +24,7 @@ pub fn init(server: Arc<Server>, exec_dir: &Path) {
     carrot_core::set_global(Arc::clone(&carrot));
     carrot.register_module(Arc::new(BuilderMode));
     carrot.register_module(Arc::new(carrot_essentials::Essentials::new()));
+    carrot.register_module(Arc::new(carrot_multiverse::Multiverse::new()));
+    carrot.register_module(Arc::new(carrot_chat::Chat::new()));
     carrot.init();
 }
