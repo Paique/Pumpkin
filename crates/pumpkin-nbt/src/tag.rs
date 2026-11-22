@@ -232,7 +232,7 @@ impl NbtTag {
                     return Err(Error::NegativeLength(len));
                 }
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
                 reader.skip_bytes(len as i64)
@@ -249,7 +249,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
 
@@ -267,7 +267,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
 
@@ -284,7 +284,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
 
@@ -350,7 +350,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
                 Ok(Self::ByteArray(reader.get_byte_array(len)?.into()))
@@ -367,7 +367,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
 
@@ -393,7 +393,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
 
@@ -406,7 +406,7 @@ impl NbtTag {
                 }
 
                 let len = len as usize;
-                if len > crate::MAX_ARRAY_LENGTH {
+                if crate::array_limit::exceeds(len) {
                     return Err(Error::LargeLength(len));
                 }
 

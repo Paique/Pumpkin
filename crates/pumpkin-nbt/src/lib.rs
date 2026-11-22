@@ -18,6 +18,8 @@ use serializer::{NbtWriteHelper, NbtWriteHelperBedrock, NbtWriteHelperJava};
 use tag::NbtTag;
 use thiserror::Error;
 
+/// Contextual relaxation of the array length decode guard.
+pub mod array_limit;
 /// CESU-8 string conversion helpers.
 pub mod cesu8;
 /// Compound-tag storage and construction helpers.

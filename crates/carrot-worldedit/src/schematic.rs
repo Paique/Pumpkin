@@ -10,6 +10,7 @@ use std::io::Cursor;
 
 use pumpkin_data::BlockStateId;
 use pumpkin_nbt::NbtCompound;
+use pumpkin_nbt::array_limit;
 use pumpkin_nbt::nbt_compress::{read_gzip_compound_tag, write_gzip_compound_tag_to_bytes};
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
@@ -26,7 +27,9 @@ use crate::states::{parse_state_str, state_to_string};
 /// is corrupted or uses an unsupported version.
 pub fn read_schematic(bytes: &[u8]) -> Result<Clipboard, String> {
     let mut cursor = Cursor::new(bytes);
-    let root = read_gzip_compound_tag(&mut cursor)
+    // A local schematic is a trusted source: its BlockData legitimately
+    // exceeds the network-facing `MAX_ARRAY_LENGTH` guard.
+    let root = array_limit::unbounded(|| read_gzip_compound_tag(&mut cursor))
         .map_err(|err| format!("arquivo .schem inválido: {err}"))?;
 
     // V1/V2: the root compound itself is named "Schematic". V3: an empty
@@ -393,5 +396,24 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(read_schematic(b"isto nao e nbt").is_err());
+    }
+
+    #[test]
+    fn round_trips_block_data_above_nbt_array_limit() {
+        // One varint byte per block, so BlockData exceeds `MAX_ARRAY_LENGTH`.
+        let stone = parse_state_str("stone").expect("stone");
+        let count = 600_000;
+        let size = Vector3::new(600, 100, 10);
+        let original = Clipboard::from_parts(
+            BlockPos(Vector3::new(0, 0, 0)),
+            BlockPos(Vector3::new(0, 0, 0)),
+            size,
+            vec![stone; count],
+            HashMap::new(),
+        );
+
+        let bytes = write_schematic(&original).expect("writes");
+        let loaded = read_schematic(&bytes).expect("reads back");
+        assert_eq!(loaded.volume(), count);
     }
 }
