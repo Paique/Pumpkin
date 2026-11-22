@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/carrot",
+    "crates/carrot-axiom",
     "crates/carrot-core",
     "crates/carrot-chat",
     "crates/carrot-essentials",

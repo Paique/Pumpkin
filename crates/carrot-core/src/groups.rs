@@ -59,6 +59,7 @@ impl GroupsConfig {
                     "carrot:essentials.gamemode".to_string(),
                     "carrot:essentials.setwarp".to_string(),
                     "carrot:essentials.delwarp".to_string(),
+                    "axiom.default".to_string(),
                 ],
                 players: vec![
                     "sh4wsz".to_string(),

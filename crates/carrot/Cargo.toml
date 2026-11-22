@@ -7,6 +7,7 @@ license.workspace = true
 description = "Carrot server feature modules (aggregator)."
 
 [dependencies]
+carrot-axiom = { path = "../carrot-axiom" }
 carrot-core = { path = "../carrot-core" }
 carrot-chat = { path = "../carrot-chat" }
 carrot-essentials = { path = "../carrot-essentials" }

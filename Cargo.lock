@@ -437,6 +437,7 @@ dependencies = [
 name = "carrot"
 version = "0.2.2+26.3-26.63"
 dependencies = [
+ "carrot-axiom",
  "carrot-chat",
  "carrot-core",
  "carrot-essentials",
@@ -445,6 +446,21 @@ dependencies = [
  "carrot-worldedit",
  "pumpkin-core",
  "pumpkin-util",
+]
+
+[[package]]
+name = "carrot-axiom"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "carrot-core",
+ "pumpkin-core",
+ "pumpkin-data",
+ "pumpkin-util",
+ "serde",
+ "tokio",
+ "toml",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -529,6 +545,8 @@ name = "carrot-worldedit"
 version = "0.2.2+26.3-26.63"
 dependencies = [
  "carrot-core",
+ "flate2",
+ "pumpkin-config",
  "pumpkin-core",
  "pumpkin-data",
  "pumpkin-inventory",
@@ -537,6 +555,7 @@ dependencies = [
  "pumpkin-world",
  "rayon",
  "serde",
+ "tempfile",
  "tokio",
  "toml",
  "tracing",
