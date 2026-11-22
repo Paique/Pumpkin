@@ -13,6 +13,7 @@ OriginalFilename = "pumpkin.exe"
 LegalCopyright = "Copyright © 2026 Aleksander Medvedev"
 
 [dependencies]
+carrot = { path = "../carrot" }
 pumpkin-core.workspace = true
 pumpkin-wasm-host.workspace = true
 pumpkin-config.workspace = true

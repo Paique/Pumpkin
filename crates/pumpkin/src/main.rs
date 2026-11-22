@@ -187,6 +187,9 @@ async fn main() {
     });
     let plugin_wait_time = pumpkin_server.init_plugins().await;
 
+    // Carrot feature modules (runtime-toggleable). See docs/plans/decisions/ADR-0006.
+    carrot::init(Arc::clone(&pumpkin_server.server), &exec_dir);
+
     let time_elapsed = time.elapsed().saturating_sub(plugin_wait_time);
 
     info!(

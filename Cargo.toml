@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/carrot",
+    "crates/carrot-core",
     "crates/pumpkin",
     "crates/pumpkin-core",
     "crates/pumpkin-api-macros",

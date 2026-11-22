@@ -434,6 +434,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "carrot"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "carrot-core",
+ "pumpkin-core",
+ "pumpkin-util",
+]
+
+[[package]]
+name = "carrot-core"
+version = "0.2.2+26.3-26.63"
+dependencies = [
+ "pumpkin-core",
+ "pumpkin-util",
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2944,6 +2965,7 @@ dependencies = [
 name = "pumpkin"
 version = "0.2.2+26.3-26.63"
 dependencies = [
+ "carrot",
  "console-subscriber",
  "libc",
  "pumpkin-config",
