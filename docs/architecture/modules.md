@@ -1,6 +1,6 @@
 # Modules — workspace crate boundaries
 
-> **Status:** Implemented — verified against the workspace `Cargo.toml` members list, each crate's `src/` layout and manifests (2026-11-21).
+> **Status:** Implemented — verified against the workspace `Cargo.toml` members list, each crate's `src/` layout and manifests (2026-11-22; carrot crates verified 2026-11-22 against commits `27da4e5af`–`a4fcb98b7`).
 
 Pumpkin is a single Cargo workspace. The binary crate `pumpkin` wires together the library crates in `crates/`; three helper crates live in `tools/`. One directory in `crates/` is **not** a workspace member: `crates/pumpkin-plugin-wit` holds only WIT package files and licenses (no `Cargo.toml`) and is subtree-mirrored to its own repository on every push to `master` (`.github/workflows/sync-wit.yml`).
 
@@ -51,6 +51,20 @@ Pumpkin is a single Cargo workspace. The binary crate `pumpkin` wires together t
 | `crates/pumpkin-wasm-host` | Facade for the WebAssembly plugin host (`WasmPluginLoader`). |
 | `crates/pumpkin-wasm-host-common` | Shared host plumbing. |
 | `crates/pumpkin-wasm-host-v0_1` / `-v0_2` | Host implementations that generate their own bindings for WIT API v0.1 / v0.2. v0.2 is gated behind the `plugin-v0_2` feature of `pumpkin` (off by default). |
+
+## Carrot modules (this fork)
+
+Carrot is this fork's runtime-toggleable feature layer — the native replacement for the reference build server's Paper plugins ([ADR-0006](../plans/decisions/ADR-0006-carrot-module-system.md)). It lives in `crates/carrot*`, kept out of the upstream tree so rebases stay cheap; the only upstream-tree change is the `carrot::init` call in `crates/pumpkin/src/main.rs` plus workspace/member entries. Command surface: [docs/minecraft/commands.md](../minecraft/commands.md).
+
+| Crate | Role |
+| --- | --- |
+| `crates/carrot-core` | The module system: `CarrotModule` trait (id, `depends()`, `default_enabled()`, sync `on_enable`/`on_disable`), `ModuleContext` (registers commands/events/permissions as a synthetic plugin context `carrot-<id>`), and the `Carrot` manager that loads `carrot.toml`/`groups.toml` from `<exec_dir>/carrot/`, enables modules in dependency order, and toggles them at runtime. Also owns the root `/carrot` command and the `carrot:` permission namespace with LuckPerms-style groups. |
+| `crates/carrot` | The aggregator: registers `builder_mode` (creative-on-join for `carrot:buildermode` holders) and calls each feature crate's registration into the manager; `carrot::init(server, exec_dir)` is the single entry point. |
+| `crates/carrot-essentials` | Player QoL: homes, warps, tpa, `/back`, `/spawn`, fly, speed, gamemode, night vision (`/n`, `/nv`). Persisted as write-through TOML under `carrot/modules/essentials/`. |
+| `crates/carrot-chat` | Channel chat: local/global channels with config-driven command names (default `/l`, `/g`), pt-BR message filters, cooldowns and a local radius. Cancels vanilla broadcasts while enabled. |
+| `crates/carrot-multiverse` | Multiworld: declare worlds in `worlds.toml`, load/unload at runtime, `/goto` teleports with on-demand loading. |
+| `crates/carrot-worldedit` | The world-editing engine: per-player sessions (selection, clipboard, gmask) in memory, gzipped-NBT undo/redo on disk, Sponge `.schem` I/O, patterns and masks, and the classic worldedit command set. |
+| `crates/carrot-terrain` | Terraforming on top of the worldedit engine (depends on `carrot-worldedit`'s `WeState`): png-heightmap brushes (goBrush), VoxelSniper-style tools, Arceon brushes/TypeReplace/Revolve/Loft, ezEdits texturing (`//eztexture`), terrain masks registered into the worldedit mask parser. 18 default brush heightmaps are compiled in via `include_bytes!` and seeded to `carrot/gobrush/brushes/` (runtime brushes are read from disk, so users can add their own). |
 
 ## Tools
 

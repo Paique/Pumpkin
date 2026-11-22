@@ -1,6 +1,6 @@
 # Dependencies — internal direction and external systems
 
-> **Status:** Implemented — internal edges extracted from every crate's `Cargo.toml` `[dependencies]` section; external systems from `build.rs`, `crates/pumpkin-auth/src/`, `Dockerfile` and workflow files (2026-11-21).
+> **Status:** Implemented — internal edges extracted from every crate's `Cargo.toml` `[dependencies]` section; external systems from `build.rs`, `crates/pumpkin-auth/src/`, `Dockerfile` and workflow files (2026-11-21; carrot edges verified 2026-11-22).
 
 ## Allowed internal direction
 
@@ -20,6 +20,14 @@ pumpkin (binary)
            wasm-host-v0_1 / v0_2 ──► config, core, data, inventory, macros, nbt, protocol, util, world, wasm-host-common
            wasm-host-common ──► auth, core, data, inventory, plugin-runtime, util, world
            pumpkin-plugin-utils ──► plugin-api          (plugin-api has NO internal dependencies)
+      │
+      └─ carrot layer (this fork; only the binary calls `carrot::init` — no pumpkin crate depends on carrot):
+           carrot (aggregator) ──► carrot-core, carrot-chat, carrot-essentials, carrot-multiverse, carrot-terrain, carrot-worldedit, core, util
+           carrot-core ──► core, util
+           carrot-essentials / carrot-chat ──► carrot-core, core, data, util
+           carrot-multiverse ──► carrot-core, core, data, world, util
+           carrot-worldedit ──► carrot-core, core, data, inventory, nbt, world, util
+           carrot-terrain ──► carrot-core, carrot-worldedit, core, data, inventory, nbt, world, util
 ```
 
 Leaves (no internal dependencies): `pumpkin-api-macros`, `pumpkin-auth`, `pumpkin-codecs`, `pumpkin-macros`, `pumpkin-plugin-api`, `pumpkin-plugin-runtime`, `pumpkin-scheduler`, `pumpkin-fuzzer`.
@@ -31,6 +39,8 @@ Leaf edges worth noting:
 - `pumpkin-core → pumpkin-gametest` is a real edge in the manifests (the GameTest framework is wired into the server), even though gametest *content* lives in the harness.
 - `pumpkin-plugin-api` deliberately depends on nothing internal — it is the permissive-licensed SDK surface, and pulling server code into it would break the license boundary ([INV-0005](../plans/invariants/INV-0005-plugin-crate-license-boundary.md)).
 - `crates/pumpkin-plugin-wit` is not a crate: no Cargo.toml, no dependency edges. It is subtree-mirrored to `Pumpkin-MC/pumpkin-plugin-wit` on pushes to `master` (`.github/workflows/sync-wit.yml`).
+- **Carrot layer direction is strictly one-way downward.** Every `carrot-*` crate depends only on `pumpkin-*` crates (and sibling carrot crates); no `pumpkin-*` crate ever depends back into carrot — the binary's single `carrot::init` call is the only coupling ([ADR-0006](../plans/decisions/ADR-0006-carrot-module-system.md)). Within the layer, `carrot-terrain → carrot-worldedit` is the only feature-to-feature edge: terrain builds on the worldedit engine's state and mask parser rather than reimplementing region editing.
+- Notable carrot external dependencies: `png` (carrot-terrain decodes goBrush heightmap PNGs; default brushes are compiled in via `include_bytes!`), `rayon` (carrot-worldedit and carrot-terrain run heavy region transforms off the tick), plain `serde` + `toml` for all persistence (no JSON or database), and `tokio` (`rt`, `time`) where modules schedule async work (multiverse auto-unload task, essentials tpa timeouts).
 
 ## External systems
 

@@ -1,102 +1,130 @@
-# Graph Report - Pumpkin  (2026-11-21)
+# Graph Report - docs  (2026-11-22)
 
 ## Corpus Check
-- Corpus is ~9,696 words - fits in a single context window. You may not need a graph.
+- 30 files · ~0 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 77 nodes · 221 edges · 8 communities (7 shown, 1 thin omitted)
-- Extraction: 9% EXTRACTED · 91% INFERRED · 0% AMBIGUOUS · INFERRED: 202 edges (avg confidence: 0.9)
+- 181 nodes · 313 edges · 18 communities (10 shown, 8 thin omitted)
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 18 edges (avg confidence: 0.82)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
+- architecture
 - development
-- architecture
-- concepts
-- concepts
 - concepts
 - architecture
+- architecture
+- plans
 - concepts
-- concepts
+- architecture
+- plans
+- plans
+- plans
+- plans
+- architecture
+- architecture
+- architecture
+- architecture
+- architecture
+- plans
 
 ## God Nodes (most connected - your core abstractions)
-1. `Plugin platform (Wasm)` - 9 edges
-2. `pumpkin-data` - 8 edges
-3. `ADR-0001: Runtime separation — sync tick, async Tokio, CPU work on Rayon` - 7 edges
-4. `ADR-0004: Entity islands tick in parallel, bounded by reach reports` - 7 edges
-5. `Vanilla datapack extraction` - 7 edges
-6. `Wasm plugin host` - 6 edges
-7. `WIT` - 6 edges
-8. `Reach` - 6 edges
-9. `ADR-0002: Player movement is client-authoritative` - 6 edges
-10. `INV-0005: GPL server code never moves into permissively licensed plugin crates` - 6 edges
+1. `Generated game data pipeline` - 15 edges
+2. `Wasm plugin platform` - 15 edges
+3. `crates/carrot-core` - 13 edges
+4. `Entity islands` - 12 edges
+5. `crates/carrot (aggregator)` - 11 edges
+6. `Carrot module system` - 11 edges
+7. `ADR-0006 Carrot module system` - 10 edges
+8. `crates/pumpkin-data` - 10 edges
+9. `crates/pumpkin-core` - 9 edges
+10. `crates/carrot-terrain` - 9 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `INV-0004: CI compiles warning-free` --conceptually_related_to--> `INV-0003: Synchronous locks are never held across `.await``  [INFERRED]
-  docs/plans/invariants/INV-0004-zero-warnings-ci.md → docs/plans/invariants/INV-0003-no-sync-locks-held-across-await.md
-- `Plugin flow` --conceptually_related_to--> `Plugin platform (Wasm)`  [INFERRED]
-  docs/architecture/flows.md → docs/concepts/plugin-platform.md
-- `INV-0002: Server code never unwraps, expects, panics, todos or prints to std streams` --conceptually_related_to--> `INV-0004: CI compiles warning-free`  [INFERRED]
-  docs/plans/invariants/INV-0002-no-panic-unwrap-stdout-in-server-code.md → docs/plans/invariants/INV-0004-zero-warnings-ci.md
-- `Threading model` --conceptually_related_to--> `ADR-0001: Runtime separation — sync tick, async Tokio, CPU work on Rayon`  [INFERRED]
-  docs/architecture/flows.md → docs/plans/decisions/ADR-0001-runtime-separation-sync-tick-async-io-rayon-cpu.md
-- `Entity islands` --conceptually_related_to--> `ADR-0004: Entity islands tick in parallel, bounded by reach reports`  [INFERRED]
-  docs/concepts/entity-islands-and-reach.md → docs/plans/decisions/ADR-0004-entity-islands-with-reach-reporting.md
+- `Tokio + Rayon + rustls runtime model` --semantically_similar_to--> `Threading model (sync tick, Tokio IO, Rayon CPU)`  [INFERRED] [semantically similar]
+  docs/architecture/dependencies.md → docs/architecture/flows.md
+- `Gameplay runs synchronously inside the tick` --semantically_similar_to--> `Threading model (sync tick, Tokio IO, Rayon CPU)`  [INFERRED] [semantically similar]
+  docs/architecture/responsibilities.md → docs/architecture/flows.md
+- `Server CLI flags (--init-settings, --convert-world)` --references--> `crates/pumpkin-world`  [INFERRED]
+  docs/development/run.md → docs/architecture/modules.md
+- `crates/carrot (aggregator)` --references--> `builder_mode module (creative-on-join)`  [EXTRACTED]
+  docs/architecture/modules.md → docs/minecraft/commands.md
+- `plugin-v0_2 cargo feature` --references--> `Wasm plugin platform`  [INFERRED]
+  docs/development/build.md → docs/concepts/plugin-platform.md
+
+## Import Cycles
+- None detected.
 
 ## Hyperedges (group relationships)
-- **Generated game data: ADR-0003 decision grounds INV-0001, whose review-only enforcement is tracked by GAP-0001** — docs_plans_decisions_adr_0003, docs_plans_invariants_inv_0001, docs_plans_gaps_gap_0001, docs_concepts_generated_game_data [EXTRACTED]
-- **INV-0001 generated data not hand-edited is enforced across build, responsibilities and generated-game-data docs** — docs_plans_invariants_inv_0001, docs_development_build, docs_architecture_responsibilities, docs_concepts_generated_game_data [EXTRACTED]
-- **INV-0005 plugin crate license boundary spans dependencies, responsibilities and plugin platform docs** — docs_plans_invariants_inv_0005, docs_architecture_dependencies, docs_architecture_responsibilities, docs_concepts_plugin_platform_license_boundary [EXTRACTED]
-- **WIT changes require the host crates, the SDK and the runtime to change together** — docs_concepts_plugin_platform_wit, docs_concepts_plugin_platform_wasm_plugin_host, docs_concepts_plugin_platform_sdk, docs_concepts_plugin_platform_runtime [INFERRED]
+- **Carrot module layer (fork feature crates + lifecycle)** — docs_architecture_modules_carrot_core, docs_architecture_modules_carrot_aggregator, docs_architecture_modules_carrot_essentials, docs_architecture_modules_carrot_chat, docs_architecture_modules_carrot_multiverse, docs_architecture_modules_carrot_worldedit, docs_architecture_modules_carrot_terrain, docs_architecture_flows_carrot_module_lifecycle, plans_decisions_adr0006_carrot_module_system [EXTRACTED 1.00]
+- **Wasm plugin platform stack (WIT, SDK, hosts, runtime, decision)** — docs_concepts_plugin_platform_wasm_plugin_platform, docs_concepts_plugin_platform_wit, docs_concepts_plugin_platform_sdk, docs_concepts_plugin_platform_host, docs_concepts_plugin_platform_plugin_runtime, docs_architecture_modules_pumpkin_plugin_wit, docs_architecture_modules_pumpkin_plugin_api, docs_architecture_modules_pumpkin_plugin_runtime, docs_architecture_modules_pumpkin_wasm_host, docs_architecture_modules_pumpkin_wasm_host_common, docs_architecture_modules_pumpkin_wasm_host_v0_1, docs_architecture_modules_pumpkin_wasm_host_v0_2, docs_architecture_dependencies_wasmtime, plans_decisions_adr0005_wasm_plugin_platform_public_wit [EXTRACTED 1.00]
+- **Generated game data pipeline (Extractor -> assets -> codegen -> pumpkin-data)** — docs_concepts_generated_game_data_pipeline, docs_concepts_generated_game_data_assets_directory, docs_concepts_generated_game_data_datapack_extraction, docs_architecture_modules_pumpkin_codegen, docs_architecture_modules_pumpkin_data, docs_architecture_dependencies_vanilla_extractor, docs_architecture_dependencies_mojang_piston_meta, plans_decisions_adr0003_generated_game_data_pipeline, plans_invariants_inv0001_generated_data_not_hand_edited [EXTRACTED 1.00]
+- **Three execution domains (sync tick, Tokio async, Rayon CPU)** — docs_plans_decisions_adr_0001_runtime_separation_sync_tick_async_io_rayon_cpu_runtime_separation, docs_plans_decisions_adr_0001_runtime_separation_sync_tick_async_io_rayon_cpu_sync_tick_game_logic, docs_plans_decisions_adr_0001_runtime_separation_sync_tick_async_io_rayon_cpu_async_io_on_tokio, docs_plans_decisions_adr_0001_runtime_separation_sync_tick_async_io_rayon_cpu_rayon_cpu_work [EXTRACTED 1.00]
+- **Wasm plugin platform layer stack (WIT, hosts, SDK, CI mirror)** — docs_plans_decisions_adr_0005_wasm_plugin_platform_public_wit_wasm_plugin_platform, docs_plans_decisions_adr_0005_wasm_plugin_platform_public_wit_public_wit_contract, docs_plans_decisions_adr_0005_wasm_plugin_platform_public_wit_pumpkin_plugin_wit, docs_plans_decisions_adr_0005_wasm_plugin_platform_public_wit_pumpkin_wasm_host, docs_plans_decisions_adr_0005_wasm_plugin_platform_public_wit_pumpkin_plugin_api, docs_plans_decisions_adr_0005_wasm_plugin_platform_public_wit_sync_wit_yml [EXTRACTED 1.00]
+- **Generated game data pipeline (Extractor, codegen, generated tables)** — docs_plans_decisions_adr_0003_generated_game_data_pipeline_generated_game_data_pipeline, docs_plans_decisions_adr_0003_generated_game_data_pipeline_extractor, docs_plans_decisions_adr_0003_generated_game_data_pipeline_pumpkin_codegen, docs_plans_decisions_adr_0003_generated_game_data_pipeline_pumpkin_data_generated_tables [EXTRACTED 1.00]
 
-## Communities (8 total, 1 thin omitted)
+## Communities (18 total, 8 thin omitted)
 
-### Community 0 - "development"
-Cohesion: 0.25
-Nodes (9): Boot test, Headless bots, Clippy, typos, Criterion benches, pumpkin-fuzzer, Test harness, INV-0002: Server code never unwraps, expects, panics, todos or prints to std streams (+1 more)
+### Community 0 - "architecture"
+Cohesion: 0.12
+Nodes (24): Dependency layering rule (leaves -> domains -> core -> binary), pumpkin-plugin-wit mirror (Pumpkin-MC/pumpkin-plugin-wit), Wasmtime Wasm runtime, Plugin flow, pumpkin-core/src/plugin/permissions.rs, WasmPluginLoader, crates/pumpkin-plugin-api, crates/pumpkin-plugin-runtime (+16 more)
 
-### Community 1 - "architecture"
-Cohesion: 0.29
-Nodes (10): Allowed internal direction, Cargo workspace, GameTest framework, Generated game data, Runtime, SDK, Wasm plugin host, WIT (+2 more)
+### Community 1 - "development"
+Cohesion: 0.12
+Nodes (18): tools/pumpkin-fuzzer, crates/pumpkin-gametest, tools/pumpkin-tester, CI platform matrix, console-subscriber cargo feature, plugin-v0_2 cargo feature, Release profile (fat LTO), Boot test baseline loop (+10 more)
 
 ### Community 2 - "concepts"
-Cohesion: 0.31
-Nodes (12): Threading model, Audited reach, Conservative fallback, Entity islands, GoalReach, Reach, Runtime separation, Audited reach (+4 more)
+Cohesion: 0.17
+Nodes (17): Mojang piston-meta / piston-data, Vanilla Extractor repository, VanillaData::load, tools/pumpkin-codegen, crates/pumpkin-data, No hardcoded vanilla values, assets/ (extracted vanilla data), Vanilla datapack extraction (pumpkin-data build.rs) (+9 more)
 
-### Community 3 - "concepts"
-Cohesion: 0.31
-Nodes (9): Chunk pipeline, No hardcoded vanilla values, Client-authoritative movement, Documented deviation, Port, Vanilla parity, Client-authoritative movement, ADR-0002: Player movement is client-authoritative (+1 more)
+### Community 3 - "architecture"
+Cohesion: 0.18
+Nodes (20): Tokio + Rayon + rustls runtime model, crates/carrot (aggregator), crates/carrot-chat, crates/carrot-core, crates/carrot-essentials, crates/carrot-multiverse, crates/carrot-terrain, crates/carrot-worldedit (+12 more)
 
-### Community 4 - "concepts"
-Cohesion: 0.39
-Nodes (8): Plugin flow, License boundary, Plugin data folder, Plugin platform (Wasm), License boundary, WIT contract, ADR-0005: Plugins run as Wasm against a public, mirrored WIT contract, INV-0005: GPL server code never moves into permissively licensed plugin crates
+### Community 4 - "architecture"
+Cohesion: 0.14
+Nodes (17): Mojang session/registration services, Boot flow, Console commands flow, Java client connection flow (status -> login -> play), PumpkinServer, crates/pumpkin-auth, crates/pumpkin (binary), crates/pumpkin-command (+9 more)
 
-### Community 5 - "architecture"
-Cohesion: 0.43
-Nodes (6): Auxiliary listeners, Boot flow, Console commands, Java client connection, Crash reports, --convert-world
+### Community 5 - "plans"
+Cohesion: 0.16
+Nodes (18): PLUGIN_API_VERSION, Public WIT contract, pumpkin-plugin-api, pumpkin-plugin-wit, pumpkin-wasm-host, sync-wit.yml, Wasm plugin platform, builder_mode module (+10 more)
 
 ### Community 6 - "concepts"
-Cohesion: 0.52
-Nodes (6): assets/, Extractor, Vanilla datapack extraction, ADR-0003: Game data is generated from extracted vanilla data — never hardcoded, GAP-0001: No CI check verifies codegen output is in sync with `assets/`, INV-0001: `crates/pumpkin-data/src/generated/` is never hand-edited
+Cohesion: 0.22
+Nodes (12): Chunk pipeline, Level::fetch_chunks channel pattern, Threading model (sync tick, Tokio IO, Rayon CPU), Gameplay runs synchronously inside the tick, Audited reach (Mob::has_audited_tick), Conservative fallback reach, Entity islands, GoalReach (+4 more)
+
+### Community 7 - "architecture"
+Cohesion: 0.27
+Nodes (11): Carrot layer one-way downward direction, Carrot groups system (groups.toml), carrot::init, Carrot module lifecycle, Carrot module system (runtime-toggleable feature layer), Carrot must not modify the upstream tree, builder_mode module (creative-on-join), /carrot root command (+3 more)
+
+### Community 8 - "plans"
+Cohesion: 0.21
+Nodes (12): Async IO on Tokio, Level::fetch_chunks, Rayon CPU work, Runtime separation, Sync tick game logic, Entity islands, entity_islands.rs, Goal::tick_reach (+4 more)
+
+### Community 9 - "plans"
+Cohesion: 0.73
+Nodes (6): Extractor, Generated game data pipeline, pumpkin-codegen, pumpkin-data generated tables, No CI check for codegen drift, Generated data is never hand-edited
 
 ## Knowledge Gaps
-- **1 isolated node(s):** `Port`
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **30 isolated node(s):** `crates/pumpkin-protocol`, `crates/pumpkin-auth`, `crates/pumpkin-macros`, `crates/pumpkin-api-macros`, `crates/pumpkin-inventory` (+25 more)
+  These have ≤1 connection - possible missing edges or undocumented components.
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ADR-0001: Runtime separation — sync tick, async Tokio, CPU work on Rayon` connect `concepts` to `concepts`, `architecture`?**
-  _High betweenness centrality (0.078) - this node is a cross-community bridge._
-- **Are the 9 inferred relationships involving `Plugin platform (Wasm)` (e.g. with `development/setup.md` and `architecture/dependencies.md`) actually correct?**
-  _`Plugin platform (Wasm)` has 9 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `Port` to the rest of the system?**
-  _1 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Why does `Plugin platform (Wasm)` connect `concepts` to `development`, `architecture`, `concepts`, `architecture`?**
-  _High betweenness centrality (0.077) - this node is a cross-community bridge._
-- **Are the 8 inferred relationships involving `pumpkin-data` (e.g. with `architecture/dependencies.md` and `development/test.md`) actually correct?**
-  _`pumpkin-data` has 8 INFERRED edges - model-reasoned connections that need verification._
-- **Why does `ADR-0002: Player movement is client-authoritative` connect `concepts` to `architecture`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
-- **Are the 5 inferred relationships involving `ADR-0001: Runtime separation — sync tick, async Tokio, CPU work on Rayon` (e.g. with `architecture/flows.md` and `architecture/responsibilities.md`) actually correct?**
-  _`ADR-0001: Runtime separation — sync tick, async Tokio, CPU work on Rayon` has 5 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Entity islands` connect `concepts` to `plans`, `architecture`?**
+  _High betweenness centrality (0.308) - this node is a cross-community bridge._
+- **Why does `Entity islands` connect `plans` to `concepts`?**
+  _High betweenness centrality (0.251) - this node is a cross-community bridge._
+- **Are the 3 inferred relationships involving `Generated game data pipeline` (e.g. with `VanillaData::load` and `Vanilla parity (behavioural definition of correctness)`) actually correct?**
+  _`Generated game data pipeline` has 3 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `crates/pumpkin-protocol`, `crates/pumpkin-auth`, `crates/pumpkin-macros` to the rest of the system?**
+  _30 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `architecture` be split into smaller, more focused modules?**
+  _Cohesion score 0.12307692307692308 - nodes in this community are weakly interconnected._
+- **Should `development` be split into smaller, more focused modules?**
+  _Cohesion score 0.11594202898550725 - nodes in this community are weakly interconnected._
+- **Should `architecture` be split into smaller, more focused modules?**
+  _Cohesion score 0.1437908496732026 - nodes in this community are weakly interconnected._

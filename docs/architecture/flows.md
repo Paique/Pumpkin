@@ -10,7 +10,7 @@
 4. `VanillaData::load()` loads the game data produced from `assets/`.
 5. `--convert-world <pump|anvil|linear>` converts the world folder to the target format and exits (uses `pumpkin-world`'s region converter).
 6. Logger initialized from `advanced.logging` (level from `RUST_LOG` if set, else config); optional gzip rolling file logger; optional TTY console with command completion.
-7. Plugin loaders are assembled (`WasmPluginLoader`, with config-controlled signature verification), `PumpkinServer::new(...).await` builds the server, `init_plugins()` runs (its wait time is excluded from the "Started server" timing), then `pumpkin_server.start().await` binds listeners and runs until shutdown. Exit code comes from `SERVER_EXIT_CODE`.
+7. Plugin loaders are assembled (`WasmPluginLoader`, with config-controlled signature verification), `PumpkinServer::new(...).await` builds the server, `init_plugins()` runs (its wait time is excluded from the "Started server" timing), `carrot::init` registers the carrot modules (see [section 8](#8-carrot-module-lifecycle-this-fork)), then `pumpkin_server.start().await` binds listeners and runs until shutdown. Exit code comes from `SERVER_EXIT_CODE`.
 
 Logged at startup: server version, Java protocol version (`CURRENT_MC_VERSION` from generated `pumpkin-data`) and Bedrock version/protocol (`CURRENT_BEDROCK_MC_PROTOCOL` from `pumpkin-world`); debug builds warn that they must not be used for performance testing.
 
@@ -53,3 +53,12 @@ Logged at startup: server version, Java protocol version (`CURRENT_MC_VERSION` f
 ## 7. Auxiliary listeners
 
 Configured in `pumpkin.toml` under `networking`: server **query** (default `0.0.0.0:25565`), the Minecraft Server Management Protocol (MSMP), and LAN broadcast — each independently enabled/disabled.
+
+## 8. Carrot module lifecycle (this fork)
+
+> **Status:** Implemented — verified against `crates/pumpkin/src/main.rs`, `crates/carrot/src/lib.rs` and `carrot-core` (`manager.rs`, `config.rs`, `command.rs`) (2026-11-22). Command surface: [docs/minecraft/commands.md](../minecraft/commands.md).
+
+1. **Boot.** After `init_plugins()`, `carrot::init` (crates/pumpkin/src/main.rs:191) creates the `Carrot` manager against the exec dir, registers the six modules (`builder_mode`, `essentials`, `multiverse`, `chat`, `worldedit`, `terrain`), then `Carrot::init()` materializes `carrot.toml` (every registered module id, with each module's `default_enabled()`) and seeds `groups.toml` when missing, registers the root `/carrot` command, and registers a blocking join handler that applies group permissions to joining players.
+2. **Enable order.** Modules are enabled repeatedly in dependency order until no progress; worldedit state (`WeState`) is constructed once and shared with terrain, which registers its masks into the worldedit mask parser. The boot log line is `carrot: {enabled}/{total} modules enabled`.
+3. **Runtime toggling.** `/carrot module enable|disable <id>` flips the state and persists it to `carrot.toml`. Enable runs the module's sync `on_enable` (commands, events, permissions registered through a synthetic plugin context `carrot-<id>`); disable removes handlers by source and unregisters tracked commands — identical semantics to plugin unload. Permission nodes stay registered while a module is off.
+4. **Groups.** `groups.toml` (LuckPerms-style: inheritance, players by name, `-node` denies) is applied to a player's permission attachment by the blocking join handler registered before any module handler — a module's join handler can rely on group permissions already being applied ([ADR-0006](../plans/decisions/ADR-0006-carrot-module-system.md) ordering contract). `/carrot groups reload` re-reads the file and re-applies to all online players.

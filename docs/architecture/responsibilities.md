@@ -1,6 +1,6 @@
 # Responsibilities — what each module owns, and what it must not take on
 
-> **Status:** Implemented — verified against crate layouts, `Cargo.toml` manifests and the repository's own agent contract ([AGENTS.md](../../AGENTS.md)) (2026-11-21).
+> **Status:** Implemented — verified against crate layouts, `Cargo.toml` manifests and the repository's own agent contract ([AGENTS.md](../../AGENTS.md)) (2026-11-22; carrot section verified against the carrot crates' sources, commits `27da4e5af`–`a4fcb98b7`).
 
 Rules that cut across every crate:
 
@@ -61,6 +61,14 @@ Rules that cut across every crate:
 - `pumpkin-plugin-api`, `pumpkin-plugin-wit`, `pumpkin-plugin-utils`: **license boundary** — MIT OR Apache-2.0. Server (GPL-3.0) code must never move or be copied into these crates; see [INV-0005](../plans/invariants/INV-0005-plugin-crate-license-boundary.md).
 - `pumpkin-wasm-host*`: execute plugins; versioned per API ABI (v0.1, v0.2) with shared code in `-common`. Hosts must change together with the WIT, the SDK and (when needed) `pumpkin-plugin-runtime`.
 - Plugin platform crates must not be used to bypass server-side rules: plugin-visible events must keep firing at the same points with the same payloads, including cancellation semantics (AGENTS.md "Keep events working").
+
+### Carrot crates (`crates/carrot*`)
+
+- `carrot-core`: owns the module lifecycle (enable/disable in dependency order, synthetic plugin contexts, handler/command unregister on disable), the `carrot:` permission namespace, groups (`groups.toml` with inheritance and `-node` denies), the root `/carrot` command, and the config files under `<exec_dir>/carrot/`. It must not implement features itself — every gameplay feature lives in a feature crate (the `builder_mode` module lives in the aggregator because it is root infrastructure shared by all builds of this fork).
+- Feature crates (`carrot-essentials`, `carrot-chat`, `carrot-multiverse`, `carrot-worldedit`, `carrot-terrain`): own their feature domain end to end — commands, event handlers, persistence under their `carrot/modules/<id>/` folder, and permissions in the `carrot:` namespace. `carrot-terrain` additionally depends on `carrot-worldedit`'s engine state (`WeState`): it registers masks into the worldedit mask parser and executes edits through it, so gmask, `//confirm` and undo history apply to terrain edits too.
+- The carrot layer must **not** modify the upstream tree — the only allowed upstream change is the `carrot::init` call in `crates/pumpkin/src/main.rs` plus workspace/member and dependency entries ([ADR-0006](../plans/decisions/ADR-0006-carrot-module-system.md)). Integration with the server happens through the same registration points a plugin uses (dispatcher swap, source-tagged event handlers), so runtime toggle semantics match plugin unload.
+- Cross-cutting rules above apply unchanged: no hardcoded vanilla values (blocks/items come from `pumpkin-data`), no sync locks across `.await`, game-mutating work follows the threading model (`carrot-worldedit`'s heavy region transforms run on Rayon). `on_enable`/`on_disable` are synchronous by design.
+- A disabled module leaves its permission nodes registered (harmless while off) and removes its commands and event handlers entirely; root infrastructure (`/carrot`, groups, `builder_mode` join/respawn handlers) is always available so nothing is unreachable after a disable.
 
 ### Tools
 
