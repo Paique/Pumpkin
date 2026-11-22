@@ -7,6 +7,7 @@ mod back;
 mod fly;
 mod gm;
 mod home;
+mod nightvision;
 mod spawn;
 mod speed;
 mod tpa;
@@ -30,6 +31,7 @@ pub fn register_all(context: &mut ModuleContext<'_>, state: &Arc<EssentialsState
     warp::register(context, state);
     back::register(context, state);
     spawn::register(context, state);
+    nightvision::register(context);
 }
 
 /// Sends a plain-text message to the command source.

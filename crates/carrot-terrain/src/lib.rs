@@ -17,13 +17,17 @@ pub mod arceon_brushes;
 pub mod brush;
 pub mod commands;
 pub mod config;
+pub mod eztexture;
 pub mod fawe_brushes;
 pub mod gobrush;
+pub mod loft;
 pub mod masks;
 pub mod noise;
+pub mod revolve;
 pub mod sniper;
 pub mod state;
 pub mod terragen;
+pub mod typereplace;
 pub mod util;
 
 use std::sync::Arc;
@@ -204,6 +208,18 @@ impl EventHandler<PlayerInteractEvent> for BrushHandler {
                 tokio::spawn(async move {
                     gobrush::paint(&state, &player, target).await;
                 });
+                return;
+            }
+
+            // 4. Loft marking on plain paper: left starts a frame,
+            //    right adds a point (Arceon LoftHandler).
+            if item == "paper" {
+                event.set_cancelled(true);
+                if left_click {
+                    loft::paper_frame(&self.0, &event.player, event.clicked_pos);
+                } else if right_click {
+                    loft::paper_point(&self.0, &event.player, event.clicked_pos);
+                }
             }
         })
     }

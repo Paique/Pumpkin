@@ -46,6 +46,10 @@ pub fn register_all(context: &mut ModuleContext<'_>, state: &Arc<TerrainState>) 
     sniper_cmd::register(context, state);
     gobrush_cmd::register(context, state);
     aliases::register(context, state);
+    crate::typereplace::register(context, state);
+    crate::revolve::register(context, state);
+    crate::loft::register(context, state);
+    crate::eztexture::register(context, state);
 }
 
 /// The player behind the command source, if any.

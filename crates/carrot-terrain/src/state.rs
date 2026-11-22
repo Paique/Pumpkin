@@ -43,6 +43,10 @@ pub struct TerrainState {
     players: Mutex<HashMap<Uuid, Arc<Mutex<PlayerBrushes>>>>,
     /// Loaded goBrush heightmaps by file name.
     heightmaps: RwLock<HashMap<String, Arc<crate::gobrush::HeightMap>>>,
+    /// Per-player loft selections (`//loft`).
+    pub lofts: Mutex<crate::loft::LoftState>,
+    /// Named texturing palettes (`//ezpalette`).
+    pub palettes: crate::eztexture::PaletteStore,
     /// Where heightmap PNGs live (`carrot/gobrush/brushes`).
     heightmaps_dir: RwLock<PathBuf>,
 }
@@ -57,6 +61,8 @@ impl TerrainState {
             players: Mutex::new(HashMap::new()),
             heightmaps: RwLock::new(HashMap::new()),
             heightmaps_dir: RwLock::new(PathBuf::new()),
+            lofts: Mutex::new(crate::loft::LoftState::default()),
+            palettes: crate::eztexture::PaletteStore::default(),
         }
     }
 
@@ -68,14 +74,16 @@ impl TerrainState {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone_from(&config);
 
-        let dir = data_folder
-            .parent()
-            .and_then(|modules| modules.parent())
-            .map_or_else(
-                || data_folder.join("brushes"),
-                |carrot_root| carrot_root.join("gobrush").join("brushes"),
-            );
+        let carrot_root = data_folder.parent().and_then(|modules| modules.parent());
+        let dir = carrot_root.map_or_else(
+            || data_folder.join("brushes"),
+            |carrot_root| carrot_root.join("gobrush").join("brushes"),
+        );
         crate::gobrush::seed_default_brushes(&dir);
+        self.palettes.configure(carrot_root.map_or_else(
+            || data_folder.join("ezpalettes"),
+            |carrot_root| carrot_root.join("ezpalettes"),
+        ));
         *self
             .heightmaps_dir
             .write()
@@ -95,6 +103,11 @@ impl TerrainState {
         self.players
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.lofts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .selections
             .clear();
     }
 

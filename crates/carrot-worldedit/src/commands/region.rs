@@ -28,15 +28,18 @@ const OP_TWO: PermissionDefault = PermissionDefault::Op(PermissionLvl::Two);
 pub fn register(context: &mut ModuleContext<'_>, state: &Arc<WeState>) {
     context.register_permission(PERM_REGION, "Allows editing the selected region.", OP_TWO);
 
-    let set = SetExecutor {
-        state: Arc::clone(state),
-    };
-    context.register_command(
-        "//set",
-        command("//set", "Fills the selection with a pattern.")
-            .then(argument("pattern", StringArgumentType::GreedyPhrase).executes(set)),
-        PERM_REGION,
-    );
+    // `//s` is the Builders-Utilities shorthand for `//set`.
+    for name in ["//set", "//s"] {
+        let set = SetExecutor {
+            state: Arc::clone(state),
+        };
+        context.register_command(
+            name,
+            command(name, "Fills the selection with a pattern.")
+                .then(argument("pattern", StringArgumentType::GreedyPhrase).executes(set)),
+            PERM_REGION,
+        );
+    }
 
     // `//replace` takes an optional source mask before the pattern; the
     // aliases cover the shorthands the builders actually type.

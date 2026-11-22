@@ -29,12 +29,22 @@ const PERM_CLIPBOARD: &str = "carrot:worldedit.clipboard";
 const OP_TWO: PermissionDefault = PermissionDefault::Op(PermissionLvl::Two);
 
 /// Registers clipboard commands and permissions.
+// Flat registration table; extracting helpers would obscure the alias map.
+#[allow(clippy::too_many_lines)]
 pub fn register(context: &mut ModuleContext<'_>, state: &Arc<WeState>) {
     context.register_permission(PERM_CLIPBOARD, "Allows using the clipboard.", OP_TWO);
 
     context.register_command(
         "//copy",
         command("//copy", "Copies the selection.").executes(CopyExecutor {
+            state: Arc::clone(state),
+            cut: false,
+        }),
+        PERM_CLIPBOARD,
+    );
+    context.register_command(
+        "//c",
+        command("//c", "Copies the selection.").executes(CopyExecutor {
             state: Arc::clone(state),
             cut: false,
         }),
@@ -49,13 +59,18 @@ pub fn register(context: &mut ModuleContext<'_>, state: &Arc<WeState>) {
         PERM_CLIPBOARD,
     );
 
+    // FAWE paste aliases (`//p`, `//pa`) plus the Builders-Utilities
+    // shorthand aliases the builders actually type (`//c`, `//f`, `//pa`).
     register_paste(context, state, "//paste");
+    register_paste(context, state, "//p");
+    register_paste(context, state, "//pa");
     register_rotate(context, state, "//rotate");
     {
         let name = "//rt";
         register_rotate(context, state, name);
     }
-    register_flip(context, state);
+    register_flip(context, state, "//flip");
+    register_flip(context, state, "//f");
 
     let stack = StackExecutor {
         state: Arc::clone(state),
@@ -196,13 +211,13 @@ fn register_rotate(context: &mut ModuleContext<'_>, state: &Arc<WeState>, name: 
     );
 }
 
-fn register_flip(context: &mut ModuleContext<'_>, state: &Arc<WeState>) {
+fn register_flip(context: &mut ModuleContext<'_>, state: &Arc<WeState>, name: &str) {
     let executor = FlipExecutor {
         state: Arc::clone(state),
     };
     context.register_command(
-        "//flip",
-        command("//flip", "Mirrors the clipboard.")
+        name,
+        command(name.to_string(), "Mirrors the clipboard.")
             .executes(executor.clone())
             .then(argument("direction", StringArgumentType::SingleWord).executes(executor)),
         PERM_CLIPBOARD,

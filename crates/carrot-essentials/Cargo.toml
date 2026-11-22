@@ -9,6 +9,7 @@ description = "Carrot essentials module: fly, speed, tpa, homes, warps, back and
 [dependencies]
 carrot-core = { path = "../carrot-core" }
 pumpkin-core.workspace = true
+pumpkin-data.workspace = true
 pumpkin-util.workspace = true
 serde.workspace = true
 toml.workspace = true

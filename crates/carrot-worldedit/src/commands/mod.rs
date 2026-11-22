@@ -1,11 +1,14 @@
 //! Command registration and shared helpers.
 
 pub mod clipboard;
+pub mod generation;
 pub mod history;
 pub mod mask;
+pub mod navigation;
 pub mod region;
 pub mod schem;
 pub mod selection;
+pub mod utility;
 
 use std::sync::Arc;
 
@@ -35,6 +38,9 @@ pub fn register_all(context: &mut carrot_core::ModuleContext<'_>, state: &Arc<We
     history::register(context, state);
     schem::register(context, state);
     mask::register(context, state);
+    generation::register(context, state);
+    utility::register(context, state);
+    navigation::register(context, state);
 }
 
 /// The player behind the command source, if any.
@@ -99,6 +105,18 @@ pub(crate) fn check_volume(state: &WeState, region: &Cuboid) -> Result<(), Strin
             "Região grande demais: {volume} blocos (limite {max})."
         )),
         None => Err("Região grande demais.".to_string()),
+    }
+}
+
+/// Rejects estimated shape volumes above the configured limit.
+pub(crate) fn check_volume_estimate(state: &WeState, estimate: u64) -> Result<(), String> {
+    let max = state.with_config(|config| config.max_blocks);
+    if estimate <= max {
+        Ok(())
+    } else {
+        Err(format!(
+            "Forma grande demais: ~{estimate} blocos (limite {max})."
+        ))
     }
 }
 
