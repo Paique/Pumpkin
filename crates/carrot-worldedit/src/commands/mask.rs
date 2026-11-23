@@ -18,7 +18,7 @@ const PERM_MASK: &str = "carrot:worldedit.mask";
 const PERM_CONFIRM: &str = "carrot:worldedit.confirm";
 const OP_TWO: PermissionDefault = PermissionDefault::Op(PermissionLvl::Two);
 
-/// Registers `//gmask` and `//confirm`.
+/// Registers `//gmask`, `//confirm` and `//cancel`.
 pub fn register(context: &mut ModuleContext<'_>, state: &Arc<WeState>) {
     context.register_permission(PERM_MASK, "Allows setting the session-wide mask.", OP_TWO);
     context.register_permission(PERM_CONFIRM, "Allows confirming large edits.", OP_TWO);
@@ -39,6 +39,16 @@ pub fn register(context: &mut ModuleContext<'_>, state: &Arc<WeState>) {
         command("//confirm", "Applies a pending large edit.").executes(ConfirmExecutor {
             state: Arc::clone(state),
         }),
+        PERM_CONFIRM,
+    );
+
+    context.register_command(
+        "//cancel",
+        command("//cancel", "Cancels queued edits and the running edit.").executes(
+            CancelExecutor {
+                state: Arc::clone(state),
+            },
+        ),
         PERM_CONFIRM,
     );
 }
@@ -99,6 +109,29 @@ impl CommandExecutor for ConfirmExecutor {
             confirm_pending(&state, &player).await;
         });
         reply(context, "Confirmando...".to_string());
+        Ok(1)
+    }
+}
+
+/// `//cancel` — drops every queued edit of the player and stops the
+/// running one at the end of its current slice.
+struct CancelExecutor {
+    state: Arc<WeState>,
+}
+
+impl CommandExecutor for CancelExecutor {
+    fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        let Some(player) = player_of(context) else {
+            reply(context, ONLY_PLAYERS);
+            return Ok(0);
+        };
+        let (cleared, running) = self.state.queue().cancel(&player);
+        let mut message = format!("Canceladas {cleared} edição(ões) na fila");
+        if running {
+            message.push_str("; a edição atual para no fim do lote corrente");
+        }
+        message.push('.');
+        reply(context, message);
         Ok(1)
     }
 }

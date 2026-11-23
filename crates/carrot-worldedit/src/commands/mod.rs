@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::clipboard::Clipboard;
 use crate::edit::{EditRequest, execute};
+use crate::mask::Mask;
 use crate::region::{Cuboid, Direction};
 use crate::session::WeState;
 
@@ -127,6 +128,15 @@ pub(crate) fn clipboard_of(state: &WeState, uuid: Uuid) -> Option<Arc<Clipboard>
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     guard.clipboard.clone()
+}
+
+/// Reads the session-wide mask applied to every edit.
+pub(crate) fn gmask_of(state: &WeState, uuid: Uuid) -> Option<Mask> {
+    let session = state.session(uuid);
+    let guard = session
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard.gmask.clone()
 }
 
 /// Spawns an edit request onto the tokio runtime (never blocks the

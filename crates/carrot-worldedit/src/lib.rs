@@ -20,6 +20,7 @@ pub mod edit;
 pub mod history;
 pub mod mask;
 pub mod pattern;
+pub mod queue;
 pub mod region;
 pub mod schematic;
 pub mod session;
@@ -77,10 +78,13 @@ impl CarrotModule for WorldEdit {
             EventPriority::Normal,
             true,
         );
+        let worker = tokio::spawn(queue::run_worker(Arc::clone(&self.state)));
+        self.state.set_worker(worker.abort_handle());
         Ok(())
     }
 
     fn on_disable(&self, _context: &mut ModuleContext<'_>) {
+        self.state.abort_worker();
         self.state.clear_transient();
     }
 }

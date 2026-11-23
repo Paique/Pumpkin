@@ -19,6 +19,9 @@ pub struct WorldEditConfig {
     pub history_size: usize,
     /// Days an undo file survives.
     pub history_days: u32,
+    /// Positions the edit queue may diff (or one page to apply) per
+    /// slice; smaller values spread a huge edit thinner in memory.
+    pub queue_slice_blocks: usize,
 }
 
 impl Default for WorldEditConfig {
@@ -30,6 +33,7 @@ impl Default for WorldEditConfig {
             confirm_above: 5_000_000,
             history_size: 15,
             history_days: 7,
+            queue_slice_blocks: 524_288,
         }
     }
 }

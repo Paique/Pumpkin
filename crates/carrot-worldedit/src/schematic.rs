@@ -25,7 +25,7 @@ use crate::states::{parse_state_str, state_to_string};
 ///
 /// Returns a Portuguese error message when the file is not a schematic,
 /// is corrupted or uses an unsupported version.
-pub fn read_schematic(bytes: &[u8]) -> Result<Clipboard, String> {
+pub fn read_schematic(bytes: &[u8], max_blocks: u64) -> Result<Clipboard, String> {
     let mut cursor = Cursor::new(bytes);
     // A local schematic is a trusted source: its BlockData legitimately
     // exceeds the network-facing `MAX_ARRAY_LENGTH` guard.
@@ -50,6 +50,12 @@ pub fn read_schematic(bytes: &[u8]) -> Result<Clipboard, String> {
     }
 
     let size = read_dimensions(schematic)?;
+    // Reject by dimensions before decoding BlockData: a huge schematic
+    // would otherwise fully materialize before the size check.
+    let volume = u64::from(size.x as u32) * u64::from(size.y as u32) * u64::from(size.z as u32);
+    if volume > max_blocks {
+        return Err(format!("schematic grande demais: {volume} blocos (limite {max_blocks})"));
+    }
     let (palette_compound, block_data, entities_list, biome_data) = if version == 3 {
         let blocks = schematic.get_compound("Blocks").ok_or("V3 sem Bloco")?;
         (
@@ -384,7 +390,7 @@ mod tests {
     fn round_trips_through_v2() {
         let original = sample_clipboard();
         let bytes = write_schematic(&original).expect("writes");
-        let loaded = read_schematic(&bytes).expect("reads back");
+        let loaded = read_schematic(&bytes, u64::MAX).expect("reads back");
         assert_eq!(loaded.size(), original.size());
         assert_eq!(loaded.min(), original.min());
         assert_eq!(loaded.origin(), original.origin());
@@ -395,7 +401,7 @@ mod tests {
 
     #[test]
     fn rejects_garbage() {
-        assert!(read_schematic(b"isto nao e nbt").is_err());
+        assert!(read_schematic(b"isto nao e nbt", u64::MAX).is_err());
     }
 
     #[test]
@@ -413,7 +419,7 @@ mod tests {
         );
 
         let bytes = write_schematic(&original).expect("writes");
-        let loaded = read_schematic(&bytes).expect("reads back");
+        let loaded = read_schematic(&bytes, u64::MAX).expect("reads back");
         assert_eq!(loaded.volume(), count);
     }
 }

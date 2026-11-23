@@ -127,12 +127,8 @@ impl CommandExecutor for LoadExecutor {
         };
 
         match std::fs::read(&path) {
-            Ok(bytes) => match schematic::read_schematic(&bytes) {
+            Ok(bytes) => match schematic::read_schematic(&bytes, max) {
                 Ok(clipboard) => {
-                    if clipboard.volume() as u64 > max {
-                        reply(context, format!("Schematic grande demais (limite {max})."));
-                        return Ok(0);
-                    }
                     let origin = clipboard.origin();
                     let volume = clipboard.volume();
                     let session = self.state.session(player.gameprofile.id);

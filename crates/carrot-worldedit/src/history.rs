@@ -143,6 +143,19 @@ impl HistoryStore {
     /// removed.
     pub fn commit_record(&mut self, writer: HistoryWriter) -> std::io::Result<u64> {
         let (seq, total) = writer.finish()?;
+        self.commit_seq(seq)?;
+        Ok(total)
+    }
+
+    /// Commits a record whose writer already finished (`writer.finish`
+    /// sealed the pages but left the `.cwh.tmp` file): renames it into
+    /// place, clears the redo stack and pushes the entry onto the undo
+    /// stack.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the file cannot be renamed.
+    pub fn commit_seq(&mut self, seq: u64) -> std::io::Result<()> {
         std::fs::rename(self.tmp_path_of(seq), self.path_of(seq))?;
 
         let stale: Vec<u64> = self.redo_stack.drain(..).collect();
@@ -151,14 +164,29 @@ impl HistoryStore {
         }
         self.undo_stack.push_back(seq);
         self.trim_old();
-        Ok(total)
+        Ok(())
+    }
+
+    /// Opens the pages of a finished-but-uncommitted record (the
+    /// `//confirm` resume path).
+    ///
+    /// # Errors
+    ///
+    /// Fails when the temporary file cannot be read.
+    pub fn open_pending(&self, seq: u64) -> std::io::Result<HistoryReader> {
+        HistoryReader::open(&self.tmp_path_of(seq))
+    }
+
+    /// Discards a finished-but-uncommitted record.
+    pub fn abort_seq(&mut self, seq: u64) {
+        let _ = std::fs::remove_file(self.tmp_path_of(seq));
     }
 
     /// Discards a streaming record and deletes its temporary file.
     pub fn abort_record(&mut self, writer: HistoryWriter) {
         let seq = writer.seq();
         drop(writer);
-        let _ = std::fs::remove_file(self.tmp_path_of(seq));
+        self.abort_seq(seq);
     }
 
     /// The number of available undos.

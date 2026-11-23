@@ -11,7 +11,7 @@ use pumpkin_util::permission::{PermissionDefault, PermissionLvl};
 use pumpkin_util::text::TextComponent;
 
 use crate::commands::{ONLY_PLAYERS, player_of, reply};
-use crate::edit::replay_reader;
+use crate::queue::JobOutcome;
 use crate::session::WeState;
 
 const PERM_HISTORY: &str = "carrot:worldedit.history";
@@ -54,7 +54,6 @@ impl CommandExecutor for HistoryExecutor {
         let player = Arc::clone(&player);
         let undo = self.undo;
         tokio::spawn(async move {
-            let world = player.world();
             let session = state.session(player.gameprofile.id);
             let mut applied = 0usize;
             for _ in 0..times {
@@ -68,13 +67,21 @@ impl CommandExecutor for HistoryExecutor {
                         guard.history.pop_redo()
                     }
                 };
-                let Some(mut reader) = reader else {
+                let Some(reader) = reader else {
                     break;
                 };
-                if replay_reader(&world, &mut reader, undo).await == 0 {
-                    continue;
+                let label = if undo { "//undo" } else { "//redo" };
+                let done = state.queue().enqueue_replay(
+                    &player,
+                    label.to_string(),
+                    reader,
+                    undo,
+                    None,
+                    None,
+                );
+                if matches!(done.await, Ok(JobOutcome::Done { changed: 1.. })) {
+                    applied += 1;
                 }
-                applied += 1;
             }
             let label = if undo { "Desfeitas" } else { "Refeitas" };
             player.send_system_message(&TextComponent::text(format!(

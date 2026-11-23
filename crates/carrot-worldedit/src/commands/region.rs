@@ -10,12 +10,13 @@ use pumpkin_core::command::node::{CommandExecutor, CommandExecutorResult};
 use pumpkin_util::permission::{PermissionDefault, PermissionLvl};
 
 use crate::commands::{
-    NO_SELECTION, ONLY_PLAYERS, check_volume, clipboard_of, held_block, player_of, reply,
-    selection_of, spawn_edit,
+    NO_SELECTION, ONLY_PLAYERS, check_volume, clipboard_of, gmask_of, held_block, player_of, reply,
+    selection_of,
 };
 use crate::edit::EditRequest;
 use crate::mask::Mask;
 use crate::pattern::Pattern;
+use crate::queue::RegionSpec;
 use crate::region::RegionKind;
 use crate::session::WeState;
 
@@ -105,15 +106,23 @@ impl CommandExecutor for SetExecutor {
         }
 
         let description = format!("//set {raw}");
+        let gmask = gmask_of(&self.state, player.gameprofile.id);
         let clipboard = clipboard_of(&self.state, player.gameprofile.id);
-        spawn_edit(
-            &self.state,
-            &player,
-            EditRequest::new(
-                pattern.apply_all(region.iterate(), clipboard.as_deref()),
-                description,
-            ),
-        );
+        let state = Arc::clone(&self.state);
+        let player = Arc::clone(&player);
+        tokio::spawn(async move {
+            state.queue().enqueue_region(
+                &player,
+                RegionSpec {
+                    region,
+                    pattern,
+                    clipboard,
+                    mask: None,
+                    description,
+                    gmask,
+                },
+            );
+        });
         reply(context, "Aplicando edição...".to_string());
         Ok(1)
     }
@@ -167,13 +176,23 @@ impl CommandExecutor for ReplaceExecutor {
             || format!("//replace {to_raw}"),
             |raw| format!("//replace {raw} {to_raw}"),
         );
+        let gmask = gmask_of(&self.state, player.gameprofile.id);
         let clipboard = clipboard_of(&self.state, player.gameprofile.id);
-        let mut request = EditRequest::new(
-            pattern.apply_all(region.iterate(), clipboard.as_deref()),
-            description,
-        );
-        request.mask = Some(from_mask);
-        spawn_edit(&self.state, &player, request);
+        let state = Arc::clone(&self.state);
+        let player = Arc::clone(&player);
+        tokio::spawn(async move {
+            state.queue().enqueue_region(
+                &player,
+                RegionSpec {
+                    region,
+                    pattern,
+                    clipboard,
+                    mask: Some(from_mask),
+                    description,
+                    gmask,
+                },
+            );
+        });
         reply(context, "Aplicando edição...".to_string());
         Ok(1)
     }
@@ -220,15 +239,19 @@ impl CommandExecutor for ShapeExecutor {
             RegionKind::All => "set",
         };
         let description = format!("//{name} {raw}");
+        let gmask = gmask_of(&self.state, player.gameprofile.id);
         let clipboard = clipboard_of(&self.state, player.gameprofile.id);
-        spawn_edit(
-            &self.state,
-            &player,
-            EditRequest::new(
+        let state = Arc::clone(&self.state);
+        let player = Arc::clone(&player);
+        tokio::spawn(async move {
+            // Walls/outline positions are cheap enough to hand over as
+            // a desired list; the queue still slices both phases.
+            let request = EditRequest::new(
                 pattern.apply_all(positions, clipboard.as_deref()),
                 description,
-            ),
-        );
+            );
+            state.queue().enqueue_desired(&player, request, gmask);
+        });
         reply(context, "Aplicando edição...".to_string());
         Ok(1)
     }

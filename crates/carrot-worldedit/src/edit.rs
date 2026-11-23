@@ -1,6 +1,8 @@
-//! The edit engine: turns a list of desired states into applied world
-//! changes with on-disk history, running chunk loads on the async
-//! runtime so ticks are never blocked.
+//! The edit engine: primitives that apply desired block states.
+//!
+//! Chunk loads run on the async runtime so ticks are never blocked;
+//! the entry points hand edits to the incremental queue (`queue.rs`),
+//! which slices huge edits into bounded pieces.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -17,7 +19,7 @@ use rayon::prelude::*;
 
 use crate::history::Change;
 use crate::mask::Mask;
-use crate::session::{PendingEdit, WeState};
+use crate::session::WeState;
 
 /// Flags for bulk edits: notify clients and skip drops/redstone shape
 /// updates, like the vanilla `/fill` strict mode.
@@ -40,6 +42,10 @@ const READ_INTERVAL: usize = 65_536;
 /// writes nothing and `get_block_state_id` reads air, losing most of a
 /// huge edit. Force tickets keep the chunks alive exactly like FAWE's
 /// edit chunk retention, and `Drop` releases them even on panic.
+///
+/// The edit queue leases per slice instead (see `queue.rs`); this
+/// region-wide lease remains for one-shot applies (page replays) and
+/// tests.
 pub struct ChunkLease {
     level: Arc<Level>,
     chunks: Vec<Vector2<i32>>,
@@ -100,67 +106,65 @@ impl EditRequest {
     }
 }
 
-/// Executes an edit request end to end.
+/// Executes an edit request end to end through the edit queue.
 ///
-/// Loads chunks, applies the global mask, asks for `//confirm` when
-/// huge, applies, records history and sends feedback. Runs inside a
-/// tokio task, never on the tick thread.
+/// The queue diffs the request into history pages slice by slice, asks
+/// for `//confirm` when huge, applies page by page and reports progress
+/// on a bossbar. Awaiting keeps the legacy `execute(...).await`
+/// contract (brushes rely on it).
 pub async fn execute(state: &Arc<WeState>, player: &Arc<Player>, request: EditRequest) {
-    let uuid = player.gameprofile.id;
-    let world = player.world();
     let gmask: Option<Mask> = {
-        let session = state.session(uuid);
+        let session = state.session(player.gameprofile.id);
         let guard = session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.gmask.clone()
     };
+    let done = state.queue().enqueue_desired(player, request, gmask);
+    let _ = done.await;
+}
 
-    let _lease = ChunkLease::acquire(&world.level, &request.desired, |item| &item.0);
-    ensure_chunks(
-        &world,
-        &request.desired,
-        |item: &(BlockPos, BlockStateId)| &item.0,
-    )
-    .await;
-
-    let changes = compute_changes(
-        &world,
-        &request.desired,
-        gmask.as_ref(),
-        request.mask.as_ref(),
-    )
-    .await;
-
-    let confirm_above = state.with_config(|config| config.confirm_above);
-    if u64::try_from(changes.len()).unwrap_or(u64::MAX) > confirm_above {
-        let total = changes.len();
+/// Applies a pending `//confirm` edit (pages already on disk; no
+/// re-read of the world).
+pub async fn confirm_pending(state: &Arc<WeState>, player: &Arc<Player>) {
+    let uuid = player.gameprofile.id;
+    let pending = {
         let session = state.session(uuid);
         let mut guard = session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.pending = Some(PendingEdit {
-            world: Arc::clone(&world),
-            description: request.description,
-            changes,
-            block_entities: request.block_entities,
-        });
-        drop(guard);
-        player.send_system_message(&TextComponent::text(format!(
-            "Edição de {total} blocos. Use //confirm para aplicar."
-        )));
+        guard.pending.take()
+    };
+    let Some(pending) = pending else {
+        player.send_system_message(&TextComponent::text("Nada para confirmar.".to_string()));
         return;
-    }
-
-    apply_and_record(
-        state,
+    };
+    let reader = {
+        let session = state.session(uuid);
+        let guard = session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.history.open_pending(pending.seq)
+    };
+    let reader = match reader {
+        Ok(reader) => reader,
+        Err(err) => {
+            player.send_system_message(&TextComponent::text(format!(
+                "Falha ao retomar a edição ({err})."
+            )));
+            return;
+        }
+    };
+    let description = format!("//confirm {}", pending.description);
+    let done = state.queue().enqueue_replay(
         player,
-        &world,
-        changes,
-        request.block_entities,
-        &request.description,
-    )
-    .await;
+        description,
+        reader,
+        false,
+        Some(pending.seq),
+        Some(pending.total),
+    );
+    let _ = done.await;
 }
 
 /// Diffs desired states against the world.
@@ -201,93 +205,11 @@ pub async fn compute_changes(
     changes
 }
 
-/// Applies a pending `//confirm` edit (already computed, no re-read).
-pub async fn confirm_pending(state: &Arc<WeState>, player: &Arc<Player>) {
-    let uuid = player.gameprofile.id;
-    let pending = {
-        let session = state.session(uuid);
-        let mut guard = session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.pending.take()
-    };
-    let Some(pending) = pending else {
-        player.send_system_message(&TextComponent::text("Nada para confirmar.".to_string()));
-        return;
-    };
-    apply_and_record(
-        state,
-        player,
-        &pending.world,
-        pending.changes,
-        pending.block_entities,
-        &pending.description,
-    )
-    .await;
-}
-
-/// Writes the changes to the world and records them in the player's
-/// on-disk history.
-// The concrete hasher never varies in this crate-internal API.
-#[allow(clippy::implicit_hasher)]
-pub async fn apply_and_record(
-    state: &Arc<WeState>,
-    player: &Arc<Player>,
-    world: &Arc<World>,
-    changes: Vec<Change>,
-    block_entities: HashMap<BlockPos, NbtCompound>,
-    description: &str,
-) {
-    let total = changes.len();
-    apply_changes(world, &changes, &block_entities).await;
-
-    let session = state.session(player.gameprofile.id);
-    let record_failure = {
-        let mut guard = session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.history.record(&changes).err()
-    };
-    if let Some(err) = record_failure {
-        tracing::warn!("carrot worldedit: falha ao salvar history ({err})");
-        player.send_system_message(&TextComponent::text(format!(
-            "Aviso: falha ao salvar o history ({err}); //undo não terá esta edição."
-        )));
-    }
-    player.send_system_message(&TextComponent::text(format!(
-        "{description}: {total} bloco(s) alterado(s)."
-    )));
-}
-
-/// Re-applies a stored history entry page by page (undo uses `before`,
-/// redo `after`). Each page applies under its own chunk lease, so a
-/// huge undo never pins more than one page of changes or chunks.
-pub async fn replay_reader(
-    world: &Arc<World>,
-    reader: &mut crate::history::HistoryReader,
-    use_before: bool,
-) -> usize {
-    let mut total = 0;
-    loop {
-        let page = match reader.next_page() {
-            Ok(Some(page)) => page,
-            Ok(None) => break,
-            Err(err) => {
-                tracing::warn!("carrot worldedit: falha ao ler página do history ({err})");
-                break;
-            }
-        };
-        let targets: Vec<(BlockPos, BlockStateId)> = page
-            .iter()
-            .map(|(pos, before, after)| (*pos, if use_before { *before } else { *after }))
-            .collect();
-        apply_state_list(world, &targets).await;
-        total += targets.len();
-    }
-    total
-}
-
 /// Applies `(position, state)` pairs verbatim (no history, no masks).
+///
+/// Leases and loads the chunks of the given list only — the queue calls
+/// this once per history page, so a huge edit pins one page of chunks
+/// at a time.
 pub async fn apply_state_list(world: &Arc<World>, targets: &[(BlockPos, BlockStateId)]) {
     let _lease = ChunkLease::acquire(&world.level, targets, |item| &item.0);
     ensure_chunks(world, targets, |item: &(BlockPos, BlockStateId)| &item.0).await;
@@ -355,11 +277,16 @@ pub async fn apply_changes(
 /// module) can load before sampling.
 pub async fn ensure_chunks<T>(world: &Arc<World>, items: &[T], key: impl Fn(&T) -> &BlockPos) {
     let chunks = chunk_keys(items, key);
+    ensure_chunk_list(world, &chunks).await;
+}
 
+/// Loads the given chunk columns (skipping resident ones), yielding
+/// periodically so the runtime keeps serving other tasks.
+pub async fn ensure_chunk_list(world: &Arc<World>, chunks: &[Vector2<i32>]) {
     let mut fetched: usize = 0;
     for chunk in chunks {
-        if !world.level.is_chunk_loaded(&chunk) {
-            world.level.get_or_fetch_chunk(chunk, |_| ()).await;
+        if !world.level.is_chunk_loaded(chunk) {
+            world.level.get_or_fetch_chunk(*chunk, |_| ()).await;
             fetched += 1;
             if fetched.is_multiple_of(64) {
                 tokio::task::yield_now().await;

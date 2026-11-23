@@ -1,11 +1,11 @@
-//! Shared module state: configuration and one session per player
-//! (selection, clipboard, mask, farwand and pending confirmation).
+//! Shared module state: configuration, the edit queue and one session
+//! per player (selection, clipboard, mask, farwand and pending
+//! confirmation).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
-use pumpkin_core::world::World;
 use pumpkin_data::BlockStateId;
 use pumpkin_nbt::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
@@ -15,17 +15,17 @@ use crate::clipboard::Clipboard;
 use crate::config::WorldEditConfig;
 use crate::history::HistoryStore;
 use crate::mask::Mask;
+use crate::queue::EditQueue;
 
-/// A fully computed edit waiting for `//confirm`.
-pub struct PendingEdit {
-    /// World the edit was computed against.
-    pub world: Arc<World>,
+/// An edit whose diff is already on disk as history pages, waiting for
+/// `//confirm` to apply (the pages hold nothing in memory).
+pub struct PendingApply {
+    /// History sequence of the sealed pages.
+    pub seq: u64,
+    /// Total changes the diff produced.
+    pub total: u64,
     /// Serialized description shown to the player (`//set stone`).
     pub description: String,
-    /// `(position, state before, state after)` for every touched block.
-    pub changes: Vec<(BlockPos, BlockStateId, BlockStateId)>,
-    /// Block entity NBT to (re)create alongside the states.
-    pub block_entities: HashMap<BlockPos, NbtCompound>,
 }
 
 /// Per-player editing state.
@@ -38,8 +38,8 @@ pub struct Session {
     pub gmask: Option<Mask>,
     /// Whether the wand selects by crosshair ray at long range.
     pub farwand: bool,
-    /// Edit computed but not applied yet.
-    pub pending: Option<PendingEdit>,
+    /// Edit diffed to disk but not applied yet.
+    pub pending: Option<PendingApply>,
     /// On-disk undo/redo stacks for this player.
     pub history: HistoryStore,
 }
@@ -68,6 +68,8 @@ pub struct WeState {
     history_root: RwLock<PathBuf>,
     schematics: RwLock<PathBuf>,
     sessions: Mutex<HashMap<Uuid, Arc<Mutex<Session>>>>,
+    queue: EditQueue,
+    worker: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 impl Default for WeState {
@@ -86,6 +88,34 @@ impl WeState {
             history_root: RwLock::new(PathBuf::new()),
             schematics: RwLock::new(PathBuf::new()),
             sessions: Mutex::new(HashMap::new()),
+            queue: EditQueue::new(),
+            worker: Mutex::new(None),
+        }
+    }
+
+    /// The shared edit queue (drained by the module's worker task).
+    #[must_use]
+    pub const fn queue(&self) -> &EditQueue {
+        &self.queue
+    }
+
+    /// Stores (and replaces) the queue worker's abort handle.
+    pub fn set_worker(&self, handle: tokio::task::AbortHandle) {
+        let mut worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *worker = Some(handle);
+    }
+
+    /// Aborts the queue worker, if running (module disable).
+    pub fn abort_worker(&self) {
+        let mut worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(handle) = worker.take() {
+            handle.abort();
         }
     }
 

@@ -1,9 +1,10 @@
-//! Memory budget loop for huge edits: a full `//set`-style edit pipeline
-//! (positions -> desired -> diff -> history -> apply) over a large region
-//! must keep the process peak RSS within a fixed budget.
+//! Memory budget loop for huge edits: the incremental edit queue
+//! (diff to history pages slice by slice, apply page by page) must
+//! keep the process peak RSS within a fixed budget.
 //!
-//! Reproduces the reported bug: a big `//set` eats every byte of RAM and
-//! freezes or kills the server/container.
+//! Reproduces the reported bug: a big `//set` eats every byte of RAM
+//! and freezes or kills the server/container. The pre-queue pipeline
+//! peaked at +1105 MiB on this exact footprint.
 //!
 //! Run (release only, needs /proc — i.e. Linux/WSL):
 //! `cargo test -p carrot-worldedit --test edit_memory --release -- --ignored --nocapture`
@@ -17,13 +18,13 @@
 
 mod common;
 
-use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use carrot_worldedit::edit::{ChunkLease, apply_changes, compute_changes, ensure_chunks};
-use carrot_worldedit::history::HistoryStore;
 use carrot_worldedit::pattern::Pattern;
+use carrot_worldedit::queue::run_region_edit_probe;
 use carrot_worldedit::region::Cuboid;
+use carrot_worldedit::session::WeState;
 use carrot_worldedit::states::parse_state_str;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_util::math::position::BlockPos;
@@ -36,10 +37,8 @@ const SPAN_XZ: i32 = 384;
 const Y_MIN: i32 = 168;
 const Y_MAX: i32 = 331;
 
-/// Peak RSS the whole edit pipeline may add to the process. The current
-/// fully-materialized pipeline needs multiple GB here; the incremental
-/// queue must stay below this budget (page-sized buffers + one slice of
-/// resident chunks).
+/// Peak RSS the whole edit pipeline may add to the process (page-sized
+/// buffers, one slice of diff work, one page of resident chunks).
 const MEMORY_BUDGET_BYTES: u64 = 700 * 1024 * 1024;
 
 /// A tick longer than this counts as "server stopped responding".
@@ -84,10 +83,23 @@ async fn huge_edit_peaks_within_memory_budget() {
     let server = common::boot_server().await;
     let world = server.get_world_from_dimension(&Dimension::OVERWORLD);
 
-    // Ticker at 20 TPS like production, so chunk unload can reclaim
-    // released chunks mid-edit (the incremental pipeline depends on it)
-    // and tick responsiveness is verified alongside memory.
+    // Ticker at 20 TPS like production, so chunk unload reclaims the
+    // slices the queue releases mid-edit (the incremental pipeline
+    // depends on it) and tick responsiveness is verified with memory.
     let ticker = common::Ticker::start(&server);
+
+    // A real module state with a config that skips the //confirm gate
+    // (the probe measures the full diff+apply run in one go).
+    let data_folder = temp.path().join("modules").join("worldedit");
+    std::fs::create_dir_all(&data_folder).unwrap();
+    std::fs::write(
+        data_folder.join("worldedit.toml"),
+        "confirm_above = 9223372036854775807\nqueue_slice_blocks = 524288\n",
+    )
+    .unwrap();
+    let state = Arc::new(WeState::new());
+    state.configure(&data_folder);
+    let uuid = uuid::Uuid::new_v4();
 
     let stone = parse_state_str("stone").expect("stone parses");
     let region = Cuboid::new(
@@ -97,24 +109,18 @@ async fn huge_edit_peaks_within_memory_budget() {
     let total_blocks = region.volume().expect("volume fits u64");
     let pattern = Pattern::Single(stone);
 
-    let mut history_root = std::env::temp_dir();
-    history_root.push(format!("cwh-mem-{}", std::process::id()));
-    let mut store = HistoryStore::open(&history_root, uuid::Uuid::new_v4(), 15, 7);
-
     // --- the production edit pipeline, as `//set` runs it today ---
     reset_peak_rss();
     let edit_start = Instant::now();
+    let changed = run_region_edit_probe(&state, uuid, &world, region, pattern)
+        .await
+        .expect("edit completes");
+    let edit_elapsed = edit_start.elapsed();
+    let peak = peak_rss_bytes();
+    // ---------------------------------------------------------------
 
-    let desired = pattern.apply_all(region.iterate(), None);
-    let _lease = ChunkLease::acquire(&world.level, &desired, |item| &item.0);
-    ensure_chunks(&world, &desired, |item: &(BlockPos, _)| &item.0).await;
-    let changes = compute_changes(&world, &desired, None, None).await;
-    drop(desired);
-    apply_changes(&world, &changes, &HashMap::new()).await;
-
-    // Correctness: sampled positions must read back as stone right
-    // after apply, while the lease still pins the edited chunks (the
-    // unload/save cycle after release is a separate concern).
+    // Correctness: sampled positions must read back as stone (async
+    // getter refetches any chunk the ticker unloaded meanwhile).
     let mut missing = 0usize;
     let mut sampled = 0usize;
     for i in 0..24_000usize {
@@ -129,27 +135,38 @@ async fn huge_edit_peaks_within_memory_budget() {
         }
     }
 
-    store.record(&changes).expect("history records");
-    drop(changes);
-
-    let edit_elapsed = edit_start.elapsed();
-    let peak = peak_rss_bytes();
-    // ---------------------------------------------------------------
-
     let durations = ticker.stop();
     let max_tick = durations.iter().max().copied().unwrap_or(Duration::ZERO);
 
+    // The recorded history must cover the whole edit.
+    let undo_pages: usize = {
+        let session = state.session(uuid);
+        let mut guard = session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut reader = guard.history.pop_undo().expect("undo entry exists");
+        let mut total = 0usize;
+        while let Some(page) = reader.next_page().expect("page decodes") {
+            total += page.len();
+        }
+        total
+    };
+
     server.shutdown().await;
-    let _ = std::fs::remove_dir_all(&history_root);
 
     eprintln!(
-        "edit: {total_blocks} blocks in {edit_elapsed:?}; peak RSS +{:.0} MiB (budget {} MiB); max tick {max_tick:?}; applied {}/{}",
+        "edit: {total_blocks} blocks changed {changed} in {edit_elapsed:?}; peak RSS +{:.0} MiB (budget {} MiB); max tick {max_tick:?}; applied {}/{}; undo pages {undo_pages}",
         peak as f64 / (1024.0 * 1024.0),
         MEMORY_BUDGET_BYTES / (1024 * 1024),
         sampled - missing,
         sampled,
     );
 
+    assert_eq!(changed, total_blocks, "the queue applied every block");
+    assert_eq!(
+        undo_pages, total_blocks as usize,
+        "history pages cover the edit"
+    );
     assert!(
         peak < MEMORY_BUDGET_BYTES,
         "edit of {total_blocks} blocks peaked at +{:.0} MiB (budget {} MiB)",
