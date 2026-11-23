@@ -12,6 +12,7 @@ convertable = "convertable"
 # Carrot fork
 schem = "schem"
 PNG = "PNG"
+PN = "PN"
 ue = "ue"
 slicable = "slicable"
 vor = "vor"
@@ -19,6 +20,9 @@ ths = "ths"
 comando = "comando"
 iy = "iy"
 iz = "iz"
+# Portuguese strings used in Carrot command feedback
+limite = "limite"
+atual = "atual"
 # XXX: looks like a real misspelling of "poison" kept for serialized config compatibility
 poision = "poision"
 
