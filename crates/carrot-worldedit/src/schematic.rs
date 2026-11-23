@@ -54,7 +54,9 @@ pub fn read_schematic(bytes: &[u8], max_blocks: u64) -> Result<Clipboard, String
     // would otherwise fully materialize before the size check.
     let volume = u64::from(size.x as u32) * u64::from(size.y as u32) * u64::from(size.z as u32);
     if volume > max_blocks {
-        return Err(format!("schematic grande demais: {volume} blocos (limite {max_blocks})"));
+        return Err(format!(
+            "schematic grande demais: {volume} blocos (limite {max_blocks})"
+        ));
     }
     let (palette_compound, block_data, entities_list, biome_data) = if version == 3 {
         let blocks = schematic.get_compound("Blocks").ok_or("V3 sem Bloco")?;
