@@ -102,11 +102,11 @@ Clipboard (`carrot:worldedit.clipboard`):
 | `//rt90x4`, `//rt90x4-a` | — | DoTrO macros: rotate-paste ×4 (skip air). |
 | `//crt90x4`, `//crt90x4-a` | — | DoTrO macros: copy + rotate-paste ×4 (skip air). |
 
-History (`carrot:worldedit.history`): `//undo [times]`, `//redo [times]`, alias `//u` (= undo) — on-disk gzipped-NBT history under `carrot/modules/worldedit/history/`.
+History (`carrot:worldedit.history`): `//undo [times]`, `//redo [times]`, alias `//u` (= undo) — on-disk paginated history under `carrot/modules/worldedit/history/` (`.cwh` v2, applied page by page through the edit queue).
 
 Schematics (`carrot:worldedit.schematic`): `//schem` / `//schematic` with `save <name>`, `load <name>`, `list`, `delete <name>` — Sponge `.schem` (reads v1/2/3, writes v2) on the shared `carrot/schematics/` folder.
 
-Mask & confirm: `//gmask [mask]` (`carrot:worldedit.mask`) sets/clears the session-wide mask; `//confirm` (`carrot:worldedit.confirm`) applies a pending large edit.
+Mask & confirm: `//gmask [mask]` (`carrot:worldedit.mask`) sets/clears the session-wide mask; `//confirm` (`carrot:worldedit.confirm`) applies a pending large edit (from its on-disk pages); `//cancel` (same permission) drops queued edits and stops the running one at the current slice boundary.
 
 Generation (`carrot:worldedit.generation`): `//cyl <pattern> <radius[,radiusZ]> [height] [-h]`, `//hcyl`, `//sphere <pattern> <radius[,radiusY[,radiusZ]]> [-h]`, `//hsphere` — FAWE-geometry solid/hollow shapes.
 
