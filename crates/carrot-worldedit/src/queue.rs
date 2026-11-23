@@ -618,7 +618,13 @@ impl QueuedJob {
             let mut guard = session
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Replacing a never-confirmed edit discards its sealed
+            // pages so the tmp file cannot leak until a restart.
+            if let Some(previous) = guard.pending.take() {
+                guard.history.abort_seq(previous.seq);
+            }
             guard.pending = Some(PendingApply {
+                world: Arc::clone(&self.world),
                 seq: *seq,
                 total: *total,
                 description: self.description.clone(),

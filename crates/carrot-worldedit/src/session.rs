@@ -20,6 +20,9 @@ use crate::queue::EditQueue;
 /// An edit whose diff is already on disk as history pages, waiting for
 /// `//confirm` to apply (the pages hold nothing in memory).
 pub struct PendingApply {
+    /// World the diff ran against (a `//confirm` from another world
+    /// must not apply these absolute positions there).
+    pub world: Arc<pumpkin_core::world::World>,
     /// History sequence of the sealed pages.
     pub seq: u64,
     /// Total changes the diff produced.

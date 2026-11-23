@@ -139,6 +139,17 @@ pub async fn confirm_pending(state: &Arc<WeState>, player: &Arc<Player>) {
         player.send_system_message(&TextComponent::text("Nada para confirmar.".to_string()));
         return;
     };
+    if !Arc::ptr_eq(&pending.world, &player.world()) {
+        player.send_system_message(&TextComponent::text(
+            "Você mudou de mundo desde a edição; ela foi descartada.".to_string(),
+        ));
+        let session = state.session(uuid);
+        let mut guard = session
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.history.abort_seq(pending.seq);
+        return;
+    }
     let reader = {
         let session = state.session(uuid);
         let guard = session
