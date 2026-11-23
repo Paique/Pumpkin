@@ -1,5 +1,5 @@
 # Publishes the Carrot server image to GHCR. Runs on every push to main —
-# main is the release branch, so a push here is a release.
+# main is the release branch, so a push here is a release (push-triggered).
 name: Publish Docker Image
 
 env:
