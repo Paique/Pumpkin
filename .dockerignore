@@ -1,2 +1,10 @@
-# Dockerfile downloads a prebuilt release binary and needs no build context files.
-*
+# The image builds Carrot from source, so the context needs exactly the input
+# the cargo workspace requires: manifests, crates, codegen tools and the
+# vanilla data assets consumed by pumpkin-data's build script.
+**
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!crates/**
+!tools/**
+!assets/**

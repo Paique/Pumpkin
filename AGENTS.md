@@ -2,6 +2,15 @@
 
 Notes for coding agents working on Pumpkin. Humans are welcome to read it too. [CONTRIBUTING.md](CONTRIBUTING.md) still applies. If a maintainer or the person you're working for tells you something different from this file, do what they say, with one exception: agents never open pull requests, even when asked. See the last section.
 
+## Carrot fork: git workflow (read this first)
+
+This fork is developed and released on its own branches, which overrides the upstream flow below:
+
+- **`develop`** is the default working branch. Every commit lands here — commit directly for small changes or merge a feature branch into it.
+- **`main`** is the release branch. **Never commit directly to `main`.** Every push to `main` triggers a full Docker build and publishes the image to `ghcr.io/paique/pumpkin` (tags `latest`, `main`, `sha-<short>`, plus the server and Minecraft versions). A broken commit on `main` ships a broken image to every host using it.
+- Releasing means merging `develop` into `main` and pushing `main`. Before merging, make sure the tree builds (`cargo check --workspace`) and tests pass.
+- Release automation lives in `.github/workflows/docker-publish.yml`; the Pterodactyl egg that consumes the image is `egg-carrot.json`.
+
 ## What Pumpkin is
 
 Pumpkin is a Minecraft server written from scratch in Rust. It aims to behave like the official (vanilla) Java Edition server while running faster and on more threads. It isn't a fork of the Java code and it can't load Bukkit or Fabric plugins; it has its own native and Wasm plugin APIs.

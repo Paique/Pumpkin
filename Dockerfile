@@ -1,45 +1,49 @@
+# syntax=docker/dockerfile:1
+
+# Multi-stage build that compiles Carrot from source. The published image is
+# self-contained: every push to main builds this and publishes it to ghcr.
+# Pterodactyl/Wings injects the startup command as the container command, so
+# this image intentionally declares no ENTRYPOINT or CMD.
+
+# --- Build stage -----------------------------------------------------------
+# The official rust image ships the stable toolchain the project targets.
+# RUSTUP_TOOLCHAIN skips rust-toolchain.toml so rustup does not download the
+# rust-analyzer/rust-src components it lists, which the build does not need.
+FROM rust:1-bookworm AS builder
+
+ENV RUSTUP_TOOLCHAIN=stable
+
+WORKDIR /build
+
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tools ./tools
+COPY assets ./assets
+
+# Cache mounts keep the cargo registry and build artifacts across builds.
+# BuildKit cache mounts + GitHub Actions cache make incremental CI builds
+# realistic for a workspace this size.
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=cargo-target,target=/build/target \
+    cargo build --release --bin pumpkin && \
+    cp target/release/pumpkin /usr/local/bin/pumpkin
+
+# --- Runtime stage ----------------------------------------------------------
 FROM ubuntu:26.04
 
-ARG TARGETARCH
-ARG TARGETVARIANT
-ARG PUMPKIN_TAG=nightly
-ARG USE_X64_V3=auto
-
 RUN apt-get -o Acquire::Retries=3 update && \
-    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends curl ca-certificates netcat-openbsd && \
-    case "${TARGETARCH}" in \
-        "amd64") \
-            if [ "${TARGETVARIANT}" = "v3" ] || [ "${USE_X64_V3}" = "true" ]; then \
-                BIN_ARCH="X64-v3"; \
-            elif [ "${USE_X64_V3}" = "auto" ] && /lib64/ld-linux-x86-64.so.2 --help 2>/dev/null | grep -q "x86-64-v3 (supported"; then \
-                BIN_ARCH="X64-v3"; \
-            else \
-                BIN_ARCH="X64"; \
-            fi \
-            ;; \
-        "arm64") BIN_ARCH="ARM64" ;; \
-        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
-    esac && \
-    if [ "${PUMPKIN_TAG}" = "latest" ]; then \
-        DOWNLOAD_URL="https://github.com/Pumpkin-MC/Pumpkin/releases/latest/download/pumpkin-${BIN_ARCH}-Linux"; \
-    else \
-        DOWNLOAD_URL="https://github.com/Pumpkin-MC/Pumpkin/releases/download/${PUMPKIN_TAG}/pumpkin-${BIN_ARCH}-Linux"; \
-    fi && \
-    curl -fsSL --retry 3 "${DOWNLOAD_URL}" -o /usr/local/bin/pumpkin && \
-    chmod +x /usr/local/bin/pumpkin && \
-    apt-get purge -y --auto-remove curl && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
-    groupadd -g 2613 pumpkin && \
-    useradd -u 2613 -g pumpkin -m -d /pumpkin pumpkin && \
-    chown -R pumpkin:pumpkin /pumpkin
+    groupadd -g 988 container && \
+    useradd -u 988 -g container -m -d /home/container container
 
-WORKDIR /pumpkin
-USER pumpkin:pumpkin
+COPY --from=builder /usr/local/bin/pumpkin /usr/local/bin/pumpkin
+
+WORKDIR /home/container
+USER container:container
 
 ENV RUST_BACKTRACE=1
-EXPOSE 25565 19132 19132/udp
 
-ENTRYPOINT [ "pumpkin" ]
-
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-    CMD nc -z 127.0.0.1 25565 || exit 1
+# Java Edition and Bedrock (UDP).
+EXPOSE 25565 19132/udp

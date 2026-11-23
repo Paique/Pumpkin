@@ -1,0 +1,42 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-11-23T03:00:00+00:00",
+    "name": "Carrot",
+    "author": "gabriel.perrett@lattestudio.net",
+    "description": "Carrot is a Minecraft server built on the Pumpkin Rust server, carrying the Carrot feature modules (WorldEdit, Axiom, chat, essentials, multiverse, terrain). The image is built from source and published to ghcr on every release.",
+    "features": null,
+    "docker_images": {
+        "Carrot (latest)": "ghcr.io\/paique\/pumpkin:latest"
+    },
+    "file_denylist": [],
+    "startup": "\/usr\/local\/bin\/pumpkin",
+    "config": {
+        "files": "{\r\n    \"pumpkin.toml\": {\r\n        \"parser\": \"file\",\r\n        \"find\": {\r\n            \"address = \\\"0.0.0.0:25565\\\"\": \"address = \\\"0.0.0.0:{{server.build.default.port}}\\\"\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \"Server is now running.\"\r\n}",
+        "logs": "{}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!\/bin\/bash\r\nset -euxo pipefail\r\n\r\nmkdir -p \/mnt\/server\r\ncd \/mnt\/server\r\n\r\n# The image ships the compiled binary at \/usr\/local\/bin\/pumpkin.\r\n# Generate the initial configuration if it is not present yet.\r\nif [ ! -f pumpkin.toml ]; then\r\n    \/usr\/local\/bin\/pumpkin --init-settings\r\nfi\r\n\r\nmkdir -p worlds plugins logs",
+            "container": "ghcr.io\/paique\/pumpkin:latest",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Rust backtrace",
+            "description": "\"0\" -> No backtrace is generated. This is the default behavior.\r\n\"1\" -> Generates a minimal backtrace showing only relevant information about where the panic occurred.\r\n\"full\" -> Generates a detailed backtrace, showing all frames leading to the panic, including functions in the Rust standard library and dependencies.",
+            "env_variable": "RUST_BACKTRACE",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:0,1,full",
+            "field_type": "text"
+        }
+    ]
+}
