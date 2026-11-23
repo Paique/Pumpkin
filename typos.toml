@@ -1,5 +1,5 @@
 [files]
-extend-exclude = ["assets/", "crates/pumpkin-data/src/generated"]
+extend-exclude = ["assets/", "crates/pumpkin-data/src/generated", "docs/graphify/"]
 
 [default.extend-words]
 handled = "handled"
@@ -9,9 +9,16 @@ fo = "fo"
 undescore = "undescore"
 replaceables = "replaceables"
 convertable = "convertable"
+# Carrot fork
+schem = "schem"
+PNG = "PNG"
+ue = "ue"
+slicable = "slicable"
 
 [default.extend-identifiers]
 # Vanilla method names
 areMergable = "areMergable"
 isMergable = "isMergable"
 combineWithNeigbour = "combineWithNeigbour"
+# Carrot fork
+available_20ths = "available_20ths"
