@@ -7,20 +7,15 @@
 //! Run (release only; debug builds are not valid for timing):
 //! `cargo test -p carrot-worldedit --test edit_stress --release -- --ignored --nocapture`
 
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![allow(clippy::expect_used, clippy::print_stderr, clippy::unwrap_used)]
 
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+mod common;
+
+use std::time::Duration;
 
 use carrot_worldedit::edit::apply_state_list;
 use carrot_worldedit::states::parse_state_str;
-use pumpkin_config::{AdvancedConfiguration, BasicConfiguration, TelemetryConfig};
-use pumpkin_core::data::VanillaData;
-use pumpkin_core::server::Server;
 use pumpkin_data::BlockStateId;
-use pumpkin_data::dimension::Dimension;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
@@ -47,53 +42,16 @@ async fn huge_edit_keeps_ticking_and_applies_every_block() {
     // data/) from the current directory; this test binary owns the process.
     std::env::set_current_dir(temp.path()).unwrap();
 
-    let mut basic = BasicConfiguration::default();
-    basic.default_level_name = "world".to_string();
-    basic.allow_nether = false;
-    basic.allow_end = false;
-
-    let server = Server::new(
-        basic,
-        AdvancedConfiguration::default(),
-        TelemetryConfig::default(),
-        VanillaData::load(),
-        vec![],
-    )
-    .await
-    .expect("server boots");
-    let world = server.get_world_from_dimension(&Dimension::OVERWORLD);
+    let server = common::boot_server().await;
+    let world = server.get_world_from_dimension(&pumpkin_data::dimension::Dimension::OVERWORLD);
 
     // Manual ticker at 20 TPS measuring each tick's duration, exactly like
     // the dedicated Ticker thread does in production. Set
     // `EDIT_STRESS_NO_TICKER=1` to isolate the edit from concurrent
     // ticking (unload/clean_memory) when diagnosing.
-    let run_ticker = std::env::var("EDIT_STRESS_NO_TICKER").is_err();
-    let stop = Arc::new(AtomicBool::new(false));
-    let tick_durations: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(Vec::new()));
-    let ticker = if run_ticker {
-        Some({
-            let server = Arc::clone(&server);
-            let stop = Arc::clone(&stop);
-            let tick_durations = Arc::clone(&tick_durations);
-            std::thread::spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
-                    let start = Instant::now();
-                    server.tick();
-                    let elapsed = start.elapsed();
-                    tick_durations
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .push(elapsed);
-                    let spent = start.elapsed();
-                    if spent < Duration::from_millis(50) {
-                        std::thread::sleep(Duration::from_millis(50) - spent);
-                    }
-                }
-            })
-        })
-    } else {
-        None
-    };
+    let ticker = std::env::var("EDIT_STRESS_NO_TICKER")
+        .is_err()
+        .then(|| common::Ticker::start(&server));
 
     let stone: BlockStateId = parse_state_str("stone").expect("stone parses");
     let mut targets: Vec<(BlockPos, BlockStateId)> = Vec::new();
@@ -109,14 +67,12 @@ async fn huge_edit_keeps_ticking_and_applies_every_block() {
     // measurement.
     apply_state_list(&world, &[]).await;
 
-    let edit_start = Instant::now();
+    let edit_start = std::time::Instant::now();
     apply_state_list(&world, &targets).await;
     let edit_elapsed = edit_start.elapsed();
 
-    stop.store(true, Ordering::Relaxed);
-    if let Some(ticker) = ticker {
-        ticker.join().unwrap();
-    } else {
+    let durations = ticker.map_or_else(Vec::new, common::Ticker::stop);
+    if durations.is_empty() {
         eprintln!("[EDIT_STRESS] ticker disabled for this run");
     }
 
@@ -135,10 +91,6 @@ async fn huge_edit_keeps_ticking_and_applies_every_block() {
         }
     }
 
-    let durations = tick_durations
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
     let max_tick = durations.iter().max().copied().unwrap_or(Duration::ZERO);
     let ticks_over_limit = durations
         .iter()

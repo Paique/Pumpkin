@@ -51,6 +51,21 @@ impl Pattern {
         Ok(Self::Random(choices))
     }
 
+    /// Applies the pattern to every position, producing the desired
+    /// states for an edit (patterns are pure; world masks are applied
+    /// later by the engine).
+    #[must_use]
+    pub fn apply_all(
+        &self,
+        positions: Vec<BlockPos>,
+        clipboard: Option<&Clipboard>,
+    ) -> Vec<(BlockPos, BlockStateId)> {
+        positions
+            .into_iter()
+            .filter_map(|pos| self.apply(&pos, clipboard).map(|state| (pos, state)))
+            .collect()
+    }
+
     /// The state this pattern produces at `pos`, or `None` to leave the
     /// position untouched (out-of-clipboard).
     #[must_use]

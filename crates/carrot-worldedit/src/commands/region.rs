@@ -7,8 +7,6 @@ use pumpkin_core::command::argument_builder::{ArgumentBuilder, argument, command
 use pumpkin_core::command::argument_types::core::string::StringArgumentType;
 use pumpkin_core::command::context::command_context::CommandContext;
 use pumpkin_core::command::node::{CommandExecutor, CommandExecutorResult};
-use pumpkin_data::BlockStateId;
-use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::permission::{PermissionDefault, PermissionLvl};
 
 use crate::commands::{
@@ -107,13 +105,12 @@ impl CommandExecutor for SetExecutor {
         }
 
         let description = format!("//set {raw}");
-        let state = Arc::clone(&self.state);
         let clipboard = clipboard_of(&self.state, player.gameprofile.id);
         spawn_edit(
-            &state,
+            &self.state,
             &player,
             EditRequest::new(
-                build_desired(region.iterate(), &pattern, clipboard.as_deref()),
+                pattern.apply_all(region.iterate(), clipboard.as_deref()),
                 description,
             ),
         );
@@ -172,7 +169,7 @@ impl CommandExecutor for ReplaceExecutor {
         );
         let clipboard = clipboard_of(&self.state, player.gameprofile.id);
         let mut request = EditRequest::new(
-            build_desired(region.iterate(), &pattern, clipboard.as_deref()),
+            pattern.apply_all(region.iterate(), clipboard.as_deref()),
             description,
         );
         request.mask = Some(from_mask);
@@ -228,24 +225,11 @@ impl CommandExecutor for ShapeExecutor {
             &self.state,
             &player,
             EditRequest::new(
-                build_desired(positions, &pattern, clipboard.as_deref()),
+                pattern.apply_all(positions, clipboard.as_deref()),
                 description,
             ),
         );
         reply(context, "Aplicando edição...".to_string());
         Ok(1)
     }
-}
-
-/// Resolves a pattern for every position (patterns are pure; world masks
-/// are applied later by the engine).
-fn build_desired(
-    positions: Vec<BlockPos>,
-    pattern: &Pattern,
-    clipboard: Option<&crate::clipboard::Clipboard>,
-) -> Vec<(BlockPos, BlockStateId)> {
-    positions
-        .into_iter()
-        .filter_map(|pos| pattern.apply(&pos, clipboard).map(|state| (pos, state)))
-        .collect()
 }

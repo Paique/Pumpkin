@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use carrot_worldedit::history::Change;
+use carrot_worldedit::history::{Change, HistoryReader};
 use carrot_worldedit::session::WeState;
 use carrot_worldedit::states::parse_state_str;
 use pumpkin_data::BlockStateId;
@@ -38,6 +38,36 @@ fn screenshot_changes() -> Vec<Change> {
     changes
 }
 
+/// Drains a reader page by page, returning the total entry count and
+/// the first entry (page caps keep RAM O(page) while draining).
+fn drain(mut reader: HistoryReader) -> (usize, Option<Change>) {
+    let mut total = 0usize;
+    let mut first = None;
+    while let Some(page) = reader.next_page().expect("page decodes") {
+        if first.is_none() {
+            first = page.first().copied();
+        }
+        total += page.len();
+    }
+    (total, first)
+}
+
+/// Records `changes` on a fresh state rooted at `data_folder`, then
+/// drops the state (the "server restarted" boundary).
+fn record_on_fresh_state(data_folder: &std::path::Path, uuid: uuid::Uuid, changes: &[Change]) {
+    let state = Arc::new(WeState::new());
+    state.configure(data_folder);
+    let session = state.session(uuid);
+    let mut guard = session
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .history
+        .record(changes)
+        .expect("history record must succeed");
+    // `state` and `session` dropped here — the server restarted.
+}
+
 #[test]
 fn undo_serves_a_575k_edit_on_the_live_session() {
     let temp = tempfile::TempDir::new().expect("tempdir");
@@ -47,26 +77,23 @@ fn undo_serves_a_575k_edit_on_the_live_session() {
     let uuid = uuid::Uuid::new_v4();
     let changes = screenshot_changes();
     let session = state.session(uuid);
-    {
-        let mut guard = session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard
-            .history
-            .record(&changes)
-            .expect("history record must succeed");
-    }
-
     let mut guard = session
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .history
+        .record(&changes)
+        .expect("history record must succeed");
     assert_eq!(guard.history.undo_depth(), 1, "edit must be undoable");
     let popped = guard
         .history
         .pop_undo()
         .expect("undo entry must exist after a recorded edit");
-    assert_eq!(popped.len(), CHANGE_COUNT);
-    assert_eq!(popped[0], changes[0]);
+    drop(guard);
+
+    let (total, first) = drain(popped);
+    assert_eq!(total, CHANGE_COUNT);
+    assert_eq!(first, Some(changes[0]));
 }
 
 #[test]
@@ -76,19 +103,7 @@ fn undo_serves_a_575k_edit_after_reopening_the_session() {
     let uuid = uuid::Uuid::new_v4();
     let changes = screenshot_changes();
 
-    {
-        let state = Arc::new(WeState::new());
-        state.configure(&data_folder);
-        let session = state.session(uuid);
-        let mut guard = session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard
-            .history
-            .record(&changes)
-            .expect("history record must succeed");
-        // `WeState` dropped here — the server restarted.
-    }
+    record_on_fresh_state(&data_folder, uuid, &changes);
 
     let state = Arc::new(WeState::new());
     state.configure(&data_folder);
@@ -100,8 +115,11 @@ fn undo_serves_a_575k_edit_after_reopening_the_session() {
         .history
         .pop_undo()
         .expect("disk history must survive a restart");
-    assert_eq!(popped.len(), CHANGE_COUNT);
-    assert_eq!(popped[0], changes[0]);
+    drop(guard);
+
+    let (total, first) = drain(popped);
+    assert_eq!(total, CHANGE_COUNT);
+    assert_eq!(first, Some(changes[0]));
 }
 
 #[test]
@@ -113,16 +131,15 @@ fn undo_survives_a_module_reenable() {
 
     let state = Arc::new(WeState::new());
     state.configure(&data_folder);
-    {
-        let session = state.session(uuid);
-        let mut guard = session
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard
-            .history
-            .record(&changes)
-            .expect("history record must succeed");
-    }
+    let session = state.session(uuid);
+    let mut guard = session
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .history
+        .record(&changes)
+        .expect("history record must succeed");
+    drop(guard);
 
     // `/carrot modules worldedit disable` + `enable`: sessions are dropped
     // and rebuilt, history files stay on disk.
@@ -135,5 +152,8 @@ fn undo_survives_a_module_reenable() {
         .history
         .pop_undo()
         .expect("history must survive a module re-enable");
-    assert_eq!(popped.len(), CHANGE_COUNT);
+    drop(guard);
+
+    let (total, _) = drain(popped);
+    assert_eq!(total, CHANGE_COUNT);
 }

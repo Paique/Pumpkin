@@ -11,7 +11,7 @@ use pumpkin_util::permission::{PermissionDefault, PermissionLvl};
 use pumpkin_util::text::TextComponent;
 
 use crate::commands::{ONLY_PLAYERS, player_of, reply};
-use crate::edit::replay_entries;
+use crate::edit::replay_reader;
 use crate::session::WeState;
 
 const PERM_HISTORY: &str = "carrot:worldedit.history";
@@ -58,7 +58,7 @@ impl CommandExecutor for HistoryExecutor {
             let session = state.session(player.gameprofile.id);
             let mut applied = 0usize;
             for _ in 0..times {
-                let entries = {
+                let reader = {
                     let mut guard = session
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -68,13 +68,12 @@ impl CommandExecutor for HistoryExecutor {
                         guard.history.pop_redo()
                     }
                 };
-                let Some(entries) = entries else {
+                let Some(mut reader) = reader else {
                     break;
                 };
-                if entries.is_empty() {
+                if replay_reader(&world, &mut reader, undo).await == 0 {
                     continue;
                 }
-                replay_entries(&world, &entries, undo).await;
                 applied += 1;
             }
             let label = if undo { "Desfeitas" } else { "Refeitas" };

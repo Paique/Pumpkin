@@ -124,30 +124,13 @@ pub async fn execute(state: &Arc<WeState>, player: &Arc<Player>, request: EditRe
     )
     .await;
 
-    let mut changes: Vec<Change> = Vec::with_capacity(request.desired.len());
-    for (pos, after) in &request.desired {
-        if !world.is_in_build_limit(*pos) {
-            continue;
-        }
-        let before = world.get_block_state_id(pos);
-        if let Some(mask) = &gmask
-            && !mask.test_at(&world, pos)
-        {
-            continue;
-        }
-        if let Some(mask) = &request.mask
-            && !mask.test_at(&world, pos)
-        {
-            continue;
-        }
-        if before == *after {
-            continue;
-        }
-        changes.push((*pos, before, *after));
-        if changes.len().is_multiple_of(READ_INTERVAL) {
-            tokio::task::yield_now().await;
-        }
-    }
+    let changes = compute_changes(
+        &world,
+        &request.desired,
+        gmask.as_ref(),
+        request.mask.as_ref(),
+    )
+    .await;
 
     let confirm_above = state.with_config(|config| config.confirm_above);
     if u64::try_from(changes.len()).unwrap_or(u64::MAX) > confirm_above {
@@ -178,6 +161,44 @@ pub async fn execute(state: &Arc<WeState>, player: &Arc<Player>, request: EditRe
         &request.description,
     )
     .await;
+}
+
+/// Diffs desired states against the world.
+///
+/// Applies the session (`gmask`) and command masks; only positions
+/// whose state actually changes are returned. Yields periodically so
+/// the runtime keeps serving other tasks.
+pub async fn compute_changes(
+    world: &Arc<World>,
+    desired: &[(BlockPos, BlockStateId)],
+    gmask: Option<&Mask>,
+    mask: Option<&Mask>,
+) -> Vec<Change> {
+    let mut changes: Vec<Change> = Vec::with_capacity(desired.len());
+    for (pos, after) in desired {
+        if !world.is_in_build_limit(*pos) {
+            continue;
+        }
+        let before = world.get_block_state_id(pos);
+        if let Some(mask) = gmask
+            && !mask.test_at(world, pos)
+        {
+            continue;
+        }
+        if let Some(mask) = mask
+            && !mask.test_at(world, pos)
+        {
+            continue;
+        }
+        if before == *after {
+            continue;
+        }
+        changes.push((*pos, before, *after));
+        if changes.len().is_multiple_of(READ_INTERVAL) {
+            tokio::task::yield_now().await;
+        }
+    }
+    changes
 }
 
 /// Applies a pending `//confirm` edit (already computed, no re-read).
@@ -238,14 +259,32 @@ pub async fn apply_and_record(
     )));
 }
 
-/// Re-applies stored history entries (undo uses `before`, redo `after`).
-pub async fn replay_entries(world: &Arc<World>, entries: &[Change], use_before: bool) -> usize {
-    let targets: Vec<(BlockPos, BlockStateId)> = entries
-        .iter()
-        .map(|(pos, before, after)| (*pos, if use_before { *before } else { *after }))
-        .collect();
-    apply_state_list(world, &targets).await;
-    targets.len()
+/// Re-applies a stored history entry page by page (undo uses `before`,
+/// redo `after`). Each page applies under its own chunk lease, so a
+/// huge undo never pins more than one page of changes or chunks.
+pub async fn replay_reader(
+    world: &Arc<World>,
+    reader: &mut crate::history::HistoryReader,
+    use_before: bool,
+) -> usize {
+    let mut total = 0;
+    loop {
+        let page = match reader.next_page() {
+            Ok(Some(page)) => page,
+            Ok(None) => break,
+            Err(err) => {
+                tracing::warn!("carrot worldedit: falha ao ler página do history ({err})");
+                break;
+            }
+        };
+        let targets: Vec<(BlockPos, BlockStateId)> = page
+            .iter()
+            .map(|(pos, before, after)| (*pos, if use_before { *before } else { *after }))
+            .collect();
+        apply_state_list(world, &targets).await;
+        total += targets.len();
+    }
+    total
 }
 
 /// Applies `(position, state)` pairs verbatim (no history, no masks).
@@ -281,7 +320,11 @@ pub fn read_states(world: &World, positions: &[BlockPos]) -> Vec<BlockStateId> {
         .collect()
 }
 
-async fn apply_changes(
+/// Writes the changes to the world (block states plus block entities),
+/// flushing block updates and yielding periodically.
+// The concrete hasher never varies in this crate-internal API.
+#[allow(clippy::implicit_hasher)]
+pub async fn apply_changes(
     world: &Arc<World>,
     changes: &[Change],
     block_entities: &HashMap<BlockPos, NbtCompound>,
