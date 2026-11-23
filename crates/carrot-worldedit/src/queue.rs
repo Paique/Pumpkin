@@ -561,19 +561,31 @@ impl QueuedJob {
         match result {
             Ok(SliceResult::Running) => SliceResult::Running,
             Ok(SliceResult::Finished(outcome)) => SliceResult::Finished(outcome),
-            Err(message) => SliceResult::Finished(JobOutcome::Failed(message)),
+            Err(message) => {
+                // Settle the pages so a mid-edit failure (full disk,
+                // corrupt page) leaves no tmp behind and whatever
+                // applied stays undoable.
+                self.settle(state);
+                SliceResult::Finished(JobOutcome::Failed(message))
+            }
         }
     }
 
     /// Stops a cancelled job, committing whatever already applied so
     /// `//undo` covers it (or discarding pages when nothing applied).
     fn cancelled(&self, state: &Arc<WeState>) -> SliceResult {
+        let applied = self.settle(state);
+        SliceResult::Finished(JobOutcome::Cancelled { applied })
+    }
+
+    /// Commits or discards whatever the job already produced, returning
+    /// how many blocks were applied.
+    fn settle(&self, state: &Arc<WeState>) -> u64 {
         let uuid = self.player.gameprofile.id;
-        let applied = match &self.kind {
+        match &self.kind {
             JobKind::Edit(edit) => match &edit.stage {
                 EditStage::Diff(Some(writer)) => {
-                    let seq = writer.seq();
-                    abort_pending(state, uuid, seq);
+                    abort_pending(state, uuid, writer.seq());
                     0
                 }
                 EditStage::Diff(None) => 0,
@@ -588,9 +600,21 @@ impl QueuedJob {
                     applied
                 }
             },
-            JobKind::Replay(replay) => replay.applied,
-        };
-        SliceResult::Finished(JobOutcome::Cancelled { applied })
+            JobKind::Replay(replay) => {
+                let applied = replay.applied;
+                match replay.commit_seq {
+                    // A confirmed edit resuming: commit what applied so
+                    // it stays undoable, discard the pages otherwise.
+                    Some(seq) if applied > 0 => {
+                        let _ = commit_pending(state, uuid, seq);
+                    }
+                    Some(seq) => abort_pending(state, uuid, seq),
+                    // Plain undo/redo: the stacks already moved.
+                    None => {}
+                }
+                applied
+            }
+        }
     }
 
     /// Final messaging, bossbar teardown, `//confirm` parking and

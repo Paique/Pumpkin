@@ -30,12 +30,13 @@ use pumpkin_data::dimension::Dimension;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
-/// Edit footprint: 384x384 columns x 164 layers = ~24.2M blocks over
+/// Edit footprint: 384x384 columns x 141 layers = ~20.8M blocks over
 /// 24x24 chunks, high above terrain so every changed block is air ->
-/// stone (worst sky-light case).
+/// stone (worst sky-light case) and every position is inside the
+/// build limit (no skipped layers).
 const SPAN_XZ: i32 = 384;
 const Y_MIN: i32 = 168;
-const Y_MAX: i32 = 331;
+const Y_MAX: i32 = 308;
 
 /// Peak RSS the whole edit pipeline may add to the process (page-sized
 /// buffers, one slice of diff work, one page of resident chunks).
@@ -94,7 +95,7 @@ async fn huge_edit_peaks_within_memory_budget() {
     std::fs::create_dir_all(&data_folder).unwrap();
     std::fs::write(
         data_folder.join("worldedit.toml"),
-        "confirm_above = 9223372036854775807\nqueue_slice_blocks = 524288\n",
+        "wand_item = \"wooden_axe\"\nfarwand_distance = 512.0\nmax_blocks = 50000000\nconfirm_above = 9223372036854775807\nhistory_size = 15\nhistory_days = 7\nqueue_slice_blocks = 524288\n",
     )
     .unwrap();
     let state = Arc::new(WeState::new());
