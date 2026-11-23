@@ -31,6 +31,14 @@ pub const DEFAULT_NODE: &str = "axiom.default";
 pub const ALL_NODE: &str = "axiom.all";
 /// The gate checked by the probe and handshake.
 pub const USE_NODE: &str = "axiom.use";
+/// Gate for `axiom:set_block` (phase AX-1).
+pub const BUILD_PLACE_NODE: &str = "axiom.build.place";
+/// Gate for `axiom:set_buffer` (phase AX-1).
+pub const BUILD_SECTION_NODE: &str = "axiom.build.section";
+/// Gate for block-entity NBT inside buffers (phase AX-1).
+pub const BUILD_NBT_NODE: &str = "axiom.build.nbt";
+/// Gate for `axiom:tick_blocks` (phase AX-1).
+pub const BUILD_DANGEROUS_TICK_NODE: &str = "axiom.build_dangerous.tick";
 
 const fn root(node: &'static str, default_group: bool) -> AxiomPerm {
     AxiomPerm {

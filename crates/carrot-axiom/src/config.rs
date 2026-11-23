@@ -51,6 +51,9 @@ pub struct AxiomConfig {
     pub incompatible_data_version_resolution: VersionResolution,
     /// Reaction to an unsupported Axiom API version.
     pub unsupported_axiom_version_resolution: VersionResolution,
+    /// Blocks the editor may never place (`minecraft:command_block`, ...);
+    /// matching states decode to "leave this block alone".
+    pub disallowed_blocks: Vec<String>,
 }
 
 impl Default for AxiomConfig {
@@ -68,6 +71,7 @@ impl Default for AxiomConfig {
             blueprint_sharing: false,
             incompatible_data_version_resolution: VersionResolution::Warn,
             unsupported_axiom_version_resolution: VersionResolution::Warn,
+            disallowed_blocks: Vec::new(),
         }
     }
 }

@@ -33,10 +33,17 @@ const SERVER_CONFIG_VERSION: u8 = 0;
 /// Goodbye sent once to players who will never be offered a handshake.
 const NO_PERMISSION_MESSAGE: &str = "You don't have permission to use Axiom. Give yourself /op or axiom.default (if using a permission plugin)";
 
-/// Serverbound channels this phase accepts. AX-0 only exchanges the
-/// handshake; later phases extend this list (and the client will not send
-/// anything else meanwhile, which keeps the protocol honest).
-const SUPPORTED_SERVERBOUND: &[&str] = &[channels::HELLO];
+/// Serverbound channels this phase accepts. AX-1 accepts the tunnel
+/// multiplexer (also advertised like upstream, whose nested dispatch is
+/// rejected by [`crate::tunnel::dispatchable`]) plus the editing channels;
+/// later phases extend this list.
+const SUPPORTED_SERVERBOUND: &[&str] = &[
+    channels::TUNNEL,
+    channels::HELLO,
+    channels::SET_BLOCK,
+    channels::SET_BUFFER,
+    channels::TICK_BLOCKS,
+];
 
 /// Serializes the `axiom:enable` payload.
 ///
@@ -111,6 +118,13 @@ pub async fn probe_player(state: &AxiomState, server: &Arc<Server>, player: &Arc
     if state.with_player(uuid, |player| player.active) {
         if allowed {
             update_restrictions(state, server, player).await;
+            notify_dispatch_recovery(state, player).await;
+            let config = state.config();
+            state.watchdog_tick(
+                uuid,
+                config.max_pending_sections_per_player,
+                config.unit_watchdog_seconds,
+            );
         } else {
             state.with_player(uuid, |player| {
                 player.active = false;
@@ -249,17 +263,30 @@ pub async fn handle_hello(
 async fn on_axiom_active(state: &AxiomState, server: &Arc<Server>, player: &Arc<Player>) {
     let enable = state.enable_payload();
     send_payload(player, channels::ENABLE, &enable).await;
+    let config = state.config();
     state.with_player(player.gameprofile.id, |player| {
         player.active = true;
         player.sent_disable_reason = false;
         // Force a restrictions resend on (re)activation.
         player.restrictions = None;
+        // Fresh dispatch budget (upstream seeds the bucket on activation).
+        player.dispatch.seed(config.block_buffer_rate_limit);
     });
     update_restrictions(state, server, player).await;
     // Empty world-property registry (VarInt 0 categories) and custom-block
     // clear (VarInt 0) are always sent upstream.
     send_payload(player, channels::REGISTER_WORLD_PROPERTIES, &[0]).await;
     send_payload(player, channels::CUSTOM_BLOCKS, &[0]).await;
+    // Announce the seeded dispatch budget (add = max = full bucket).
+    send_payload(
+        player,
+        channels::UPDATE_AVAILABLE_DISPATCH_SENDS,
+        &crate::state::encode_dispatch_update(
+            config.block_buffer_rate_limit as i32,
+            config.block_buffer_rate_limit as i32,
+        ),
+    )
+    .await;
 }
 
 /// Recomputes restrictions and resends them only when they changed.
@@ -282,6 +309,26 @@ pub async fn update_restrictions(
     }
 }
 
+/// Announces recovered dispatch budget to an active client (upstream's
+/// periodic refill notification, piggybacked on the probe).
+async fn notify_dispatch_recovery(state: &AxiomState, player: &Arc<Player>) {
+    let config = state.config();
+    let pending = state
+        .pending_sections(player.gameprofile.id)
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let update = state.with_player(player.gameprofile.id, |entry| {
+        entry.dispatch.recover(&config, pending)
+    });
+    if let Some((add, max)) = update {
+        send_payload(
+            player,
+            channels::UPDATE_AVAILABLE_DISPATCH_SENDS,
+            &crate::state::encode_dispatch_update(add, max),
+        )
+        .await;
+    }
+}
+
 /// The 20-tick probe loop (one second at full TPS).
 pub async fn probe_task(server: Arc<Server>, state: Arc<AxiomState>) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -300,20 +347,28 @@ mod tests {
     #[test]
     fn enable_payload_golden() {
         let bytes = build_enable_payload(&AxiomConfig::default());
-        let expected: Vec<u8> = [
+        let mut expected: Vec<u8> = [
             // bool true, server config version 0, blueprint version 2
             &[0x01, 0x00, 0x02][..],
             // tunnel split size 31000 (BE int)
             &31_000i32.to_be_bytes(),
             // maximum tunnel packet size 2 MiB (BE int)
             &2_097_152i32.to_be_bytes(),
-            // empty blockWithCustomData + ignoreRotationSet + count 1
-            &[0x00, 0x00, 0x01],
-            // Utf8 "axiom:hello"
-            &[0x0B],
-            b"axiom:hello",
+            // empty blockWithCustomData + ignoreRotationSet + count 5
+            &[0x00, 0x00, 0x05],
         ]
         .concat();
+        // Utf8 channel list: tunnel, hello, set_block, set_buffer, tick_blocks
+        for channel in [
+            "axiom:tunnel",
+            "axiom:hello",
+            "axiom:set_block",
+            "axiom:set_buffer",
+            "axiom:tick_blocks",
+        ] {
+            expected.push(u8::try_from(channel.len()).unwrap());
+            expected.extend_from_slice(channel.as_bytes());
+        }
         assert_eq!(bytes, expected);
     }
 

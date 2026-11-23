@@ -4,18 +4,22 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Carrot Axiom module: server-side Axiom client-mod protocol (handshake, phase AX-0)."
+description = "Carrot Axiom module: server-side Axiom client-mod protocol (handshake + block editing)."
 
 [dependencies]
 carrot-core = { path = "../carrot-core" }
 pumpkin-core.workspace = true
 pumpkin-data.workspace = true
+pumpkin-nbt.workspace = true
+pumpkin-protocol.workspace = true
 pumpkin-util.workspace = true
+pumpkin-world.workspace = true
 serde.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 toml.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+zstd.workspace = true
 
 [lints]
 workspace = true

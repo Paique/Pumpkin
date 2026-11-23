@@ -66,6 +66,12 @@ impl Writer {
         self
     }
 
+    /// Appends a signed big-endian 16-bit integer.
+    pub fn write_i16_be(&mut self, value: i16) -> &mut Self {
+        self.buf.extend_from_slice(&value.to_be_bytes());
+        self
+    }
+
     /// Appends a signed big-endian 32-bit integer.
     pub fn write_i32_be(&mut self, value: i32) -> &mut Self {
         self.buf.extend_from_slice(&value.to_be_bytes());
@@ -128,6 +134,38 @@ impl<'a> Reader<'a> {
         Ok(self.take(1)?[0])
     }
 
+    /// Number of bytes consumed so far.
+    #[must_use]
+    pub const fn position(&self) -> usize {
+        self.pos
+    }
+
+    /// Total length of the underlying payload.
+    #[must_use]
+    pub const fn remaining(&self) -> usize {
+        self.buf.len() - self.pos
+    }
+
+    /// Reads a signed big-endian 16-bit integer.
+    pub fn read_i16_be(&mut self) -> Result<i16, WireError> {
+        let bytes: [u8; 2] = self.take(2)?.try_into().map_err(|_| WireError::UnexpectedEof)?;
+        Ok(i16::from_be_bytes(bytes))
+    }
+
+    /// Reads 16 raw bytes (a UUID).
+    pub fn read_uuid_bytes(&mut self) -> Result<[u8; 16], WireError> {
+        let bytes: [u8; 16] = self
+            .take(16)?
+            .try_into()
+            .map_err(|_| WireError::UnexpectedEof)?;
+        Ok(bytes)
+    }
+
+    /// Reads `len` raw bytes.
+    pub fn take_bytes(&mut self, len: usize) -> Result<&'a [u8], WireError> {
+        self.take(len)
+    }
+
     /// Reads a boolean byte.
     pub fn read_bool(&mut self) -> Result<bool, WireError> {
         Ok(self.read_byte()? != 0)
@@ -172,10 +210,20 @@ impl<'a> Reader<'a> {
 /// Packs block coordinates into a single `BlockPos` long
 /// (bits 38..64 = X, 12..38 = Z, 0..12 = Y, two's complement).
 #[must_use]
-pub fn pack_block_pos(x: i32, y: i32, z: i32) -> i64 {
-    ((i64::from(x) & 0x3FF_FFFF) << 38)
-        | ((i64::from(z) & 0x3FF_FFFF) << 12)
-        | (i64::from(y) & 0xFFF)
+pub const fn pack_block_pos(x: i32, y: i32, z: i32) -> i64 {
+    ((x as i64 & 0x3FF_FFFF) << 38)
+        | ((z as i64 & 0x3FF_FFFF) << 12)
+        | (y as i64 & 0xFFF)
+}
+
+/// Unpacks a `BlockPos` long back into `(x, y, z)` with sign extension
+/// (the inverse of [`pack_block_pos`]).
+#[must_use]
+pub const fn unpack_block_pos(packed: i64) -> (i32, i32, i32) {
+    let x = (packed >> 38) as i32;
+    let z = ((packed << 26) >> 38) as i32;
+    let y = ((packed << 52) >> 52) as i32;
+    (x, y, z)
 }
 
 /// Inclusive block-coordinate bounds announced in `axiom:restrictions`.
@@ -254,8 +302,8 @@ mod tests {
         // clamped minimum (-33554431, -2047, -33554431) must keep sign bits.
         let packed = pack_block_pos(-33_554_431, -2047, -33_554_431);
         let x = (packed >> 38) as i32;
-        let z = (packed << 26) >> 38 as i32;
-        let y = (packed << 52) >> 52 as i32;
+        let z = ((packed << 26) >> 38) as i32;
+        let y = ((packed << 52) >> 52) as i32;
         assert_eq!((x, y, z), (-33_554_431, -2047, -33_554_431));
         assert_eq!(pack_block_pos(0, 0, 0), 0);
     }
