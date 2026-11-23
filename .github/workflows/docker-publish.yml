@@ -60,6 +60,8 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          # Base image name is required even when pushing by digest.
+          tags: ${{ env.REGISTRY }}/${{ env.REGISTRY_IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
