@@ -14,6 +14,13 @@ schem = "schem"
 PNG = "PNG"
 ue = "ue"
 slicable = "slicable"
+vor = "vor"
+ths = "ths"
+comando = "comando"
+iy = "iy"
+iz = "iz"
+# XXX: looks like a real misspelling of "poison" kept for serialized config compatibility
+poision = "poision"
 
 [default.extend-identifiers]
 # Vanilla method names
